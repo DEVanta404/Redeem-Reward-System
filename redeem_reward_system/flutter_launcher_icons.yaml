@@ -1,0 +1,14 @@
+flutter_launcher_icons:
+  image_path: "assets/kapetol_icon.png"
+  android: true
+  ios: false
+  adaptive_icon_background: "#000000"
+  adaptive_icon_foreground: "assets/kapetol_icon.png"
+  adaptive_icon_monochrome: "assets/kapetol_icon.png"
+  web:
+    generate: true
+    image_path: "assets/kapetol_icon.png"
+  windows:
+    generate: true
+    image_path: "assets/kapetol_icon.png"
+  min_sdk_android: 21
