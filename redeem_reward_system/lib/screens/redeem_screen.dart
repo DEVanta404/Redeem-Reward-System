@@ -1,11 +1,37 @@
 import 'package:flutter/material.dart';
 import '../app_state.dart';
 
-class RedeemScreen extends StatelessWidget {
+class RedeemScreen extends StatefulWidget {
   final AppState state;
   final VoidCallback onRedeem;
 
   const RedeemScreen({super.key, required this.state, required this.onRedeem});
+
+  @override
+  State<RedeemScreen> createState() => _RedeemScreenState();
+}
+
+class _RedeemScreenState extends State<RedeemScreen>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // Refresh when returning to this screen
+      setState(() {});
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -36,7 +62,7 @@ class RedeemScreen extends StatelessWidget {
                 const Icon(Icons.stars, color: Color(0xFFFFA000), size: 22),
                 const SizedBox(width: 8),
                 Text(
-                  'Available: ${state.points} pts',
+                  'Available: ${widget.state.points} pts',
                   style: const TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.bold,
@@ -50,10 +76,10 @@ class RedeemScreen extends StatelessWidget {
           Expanded(
             child: ListView.builder(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-              itemCount: state.rewards.length,
+              itemCount: widget.state.rewards.length,
               itemBuilder: (context, i) {
-                final reward = state.rewards[i];
-                final canRedeem = state.points >= reward.pointsCost;
+                final reward = widget.state.rewards[i];
+                final canRedeem = widget.state.points >= reward.pointsCost;
                 return _RewardCard(
                   reward: reward,
                   canRedeem: canRedeem,
@@ -99,7 +125,7 @@ class RedeemScreen extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'Remaining: ${state.points - reward.pointsCost} pts',
+              'Remaining: ${widget.state.points - reward.pointsCost} pts',
               style: const TextStyle(
                   color: Color(0xFFFFA000), fontWeight: FontWeight.w600),
             ),
@@ -114,8 +140,9 @@ class RedeemScreen extends StatelessWidget {
           ElevatedButton(
             onPressed: () async {
               Navigator.pop(ctx);
-              await state.redeemReward(reward);
-              onRedeem();
+              await widget.state.redeemReward(reward);
+              if (!context.mounted) return;
+              widget.onRedeem();
               _showSuccess(context, reward);
             },
             style: ElevatedButton.styleFrom(

@@ -9,6 +9,7 @@ class UserProfile {
   String birthday;
   String avatarPath;
   String avatarUrl;
+  String role;
 
   UserProfile({
     this.id = '',
@@ -18,7 +19,10 @@ class UserProfile {
     required this.birthday,
     this.avatarPath = '',
     this.avatarUrl = '',
+    this.role = 'user',
   });
+
+  bool get isAdmin => role == 'admin';
 
   UserProfile copyWith({
     String? id,
@@ -28,6 +32,7 @@ class UserProfile {
     String? birthday,
     String? avatarPath,
     String? avatarUrl,
+    String? role,
   }) => UserProfile(
     id: id ?? this.id,
     name: name ?? this.name,
@@ -36,6 +41,7 @@ class UserProfile {
     birthday: birthday ?? this.birthday,
     avatarPath: avatarPath ?? this.avatarPath,
     avatarUrl: avatarUrl ?? this.avatarUrl,
+    role: role ?? this.role,
   );
 }
 
@@ -52,31 +58,246 @@ class AppTransaction {
 }
 
 class RewardItem {
+  final String id;
   final String name;
   final int pointsCost;
   final IconData icon;
+  final String description;
+  final String imageUrl;
+  final String category;
+  final bool isActive;
+  final int stock;
 
   const RewardItem({
+    this.id = '',
     required this.name,
     required this.pointsCost,
-    required this.icon,
+    this.icon = Icons.local_cafe,
+    this.description = '',
+    this.imageUrl = '',
+    this.category = 'general',
+    this.isActive = true,
+    this.stock = 0,
   });
+
+  factory RewardItem.fromMap(Map<String, dynamic> map) {
+    final iconName = (map['icon_name'] ?? map['icon'] ?? 'local_cafe').toString();
+    final icon = _iconFromString(iconName);
+
+    return RewardItem(
+      id: map['id']?.toString() ?? '',
+      name: map['name']?.toString() ?? 'Reward',
+      pointsCost: int.tryParse(map['points_cost']?.toString() ?? map['pointsCost']?.toString() ?? '0') ?? 0,
+      icon: icon,
+      description: map['description']?.toString() ?? '',
+      imageUrl: map['image_url']?.toString() ?? map['imageUrl']?.toString() ?? '',
+      category: map['category']?.toString() ?? 'general',
+      isActive: map['is_active'] == true || map['isActive'] == true,
+      stock: int.tryParse(map['stock']?.toString() ?? '0') ?? 0,
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+    'id': id,
+    'name': name,
+    'points_cost': pointsCost,
+    'description': description,
+    'image_url': imageUrl,
+    'category': category,
+    'is_active': isActive,
+    'stock': stock,
+  };
+
+  static IconData _iconFromString(String value) {
+    switch (value) {
+      case 'coffee':
+        return Icons.coffee;
+      case 'local_offer':
+        return Icons.local_offer;
+      case 'bakery_dining':
+        return Icons.bakery_dining;
+      case 'local_bar':
+        return Icons.local_bar;
+      case 'stars':
+        return Icons.stars;
+      default:
+        return Icons.local_cafe;
+    }
+  }
 }
 
 class Promotion {
+  final String id;
   final String title;
   final String subtitle;
   final String validUntil;
   final Color color;
   final IconData icon;
+  final String description;
+  final String imageUrl;
+  final String category;
+  final bool isActive;
+  final DateTime? startDate;
+  final DateTime? endDate;
+
+  static const List<IconData> adminIconOptions = [
+    Icons.redeem,
+    Icons.local_offer,
+    Icons.star,
+    Icons.cake,
+    Icons.access_time,
+    Icons.coffee,
+    Icons.local_cafe,
+    Icons.bakery_dining,
+    Icons.local_bar,
+    Icons.stars,
+  ];
+
+  static String iconLabel(IconData icon) {
+    switch (icon.codePoint) {
+      case 0xe8b5: // Icons.redeem
+        return 'Redeem';
+      case 0xe87e: // Icons.local_offer
+        return 'Offer';
+      case 0xe838: // Icons.star
+        return 'Star';
+      case 0xe7e9: // Icons.cake
+        return 'Cake';
+      case 0xe425: // Icons.access_time
+        return 'Time';
+      case 0xe6a3: // Icons.coffee
+        return 'Coffee';
+      case 0xeb44: // Icons.local_cafe
+        return 'Cafe';
+      case 0xe7f0: // Icons.bakery_dining
+        return 'Bakery';
+      case 0xe3a7: // Icons.local_bar
+        return 'Bar';
+      case 0xe6a9: // Icons.stars
+        return 'Stars';
+      default:
+        return 'Icon';
+    }
+  }
+
+  static String formatDateForDisplay(DateTime date) {
+    final month = date.month.toString().padLeft(2, '0');
+    final day = date.day.toString().padLeft(2, '0');
+    final year = date.year.toString().substring(2);
+    return '$month/$day/$year';
+  }
+
+  static DateTime? parseDateInput(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) return null;
+
+    final parts = trimmed.split('/');
+    if (parts.length != 3) return null;
+
+    int month;
+    int day;
+    int year;
+
+    try {
+      month = int.parse(parts[0]);
+      day = int.parse(parts[1]);
+      year = int.parse(parts[2]);
+    } catch (_) {
+      return null;
+    }
+
+    if (year < 100) {
+      year += year < 50 ? 2000 : 1900;
+    }
+
+    try {
+      final date = DateTime(year, month, day);
+      if (date.year != year || date.month != month || date.day != day) {
+        return null;
+      }
+      return date;
+    } catch (_) {
+      return null;
+    }
+  }
 
   const Promotion({
+    this.id = '',
     required this.title,
     required this.subtitle,
     required this.validUntil,
     required this.color,
     required this.icon,
+    this.description = '',
+    this.imageUrl = '',
+    this.category = 'general',
+    this.isActive = true,
+    this.startDate,
+    this.endDate,
   });
+
+  factory Promotion.fromMap(Map<String, dynamic> map) {
+    final iconName = (map['icon_name'] ?? map['icon'] ?? 'redeem').toString();
+    final colorHex = map['color_hex']?.toString() ?? map['color']?.toString() ?? '#2E7D32';
+
+    return Promotion(
+      id: map['id']?.toString() ?? '',
+      title: map['title']?.toString() ?? 'Promotion',
+      subtitle: map['subtitle']?.toString() ?? map['description']?.toString() ?? '',
+      validUntil: map['valid_until']?.toString() ?? map['ends_at']?.toString() ?? 'Ongoing',
+      color: _colorFromHex(colorHex),
+      icon: _iconFromString(iconName),
+      description: map['description']?.toString() ?? '',
+      imageUrl: map['image_url']?.toString() ?? map['imageUrl']?.toString() ?? '',
+      category: map['category']?.toString() ?? 'general',
+      isActive: map['is_active'] == true || map['isActive'] == true,
+      startDate: map['starts_at'] != null ? DateTime.tryParse(map['starts_at'].toString()) : null,
+      endDate: map['ends_at'] != null ? DateTime.tryParse(map['ends_at'].toString()) : null,
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+    'id': id,
+    'title': title,
+    'subtitle': subtitle,
+    'description': description,
+    'valid_until': validUntil,
+    'image_url': imageUrl,
+    'category': category,
+    'is_active': isActive,
+    'starts_at': startDate?.toUtc().toIso8601String(),
+    'ends_at': endDate?.toUtc().toIso8601String(),
+    'icon_name': icon.codePoint.toString(),
+    'color_hex': '#${color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}',
+  };
+
+  static IconData _iconFromString(String value) {
+    switch (value) {
+      case 'access_time':
+        return Icons.access_time;
+      case 'star':
+        return Icons.star;
+      case 'cake':
+        return Icons.cake;
+      case 'local_offer':
+        return Icons.local_offer;
+      case 'redeem':
+        return Icons.redeem;
+      default:
+        return Icons.redeem;
+    }
+  }
+
+  static Color _colorFromHex(String value) {
+    final hex = value.replaceAll('#', '');
+    if (hex.length == 6) {
+      return Color(int.parse('FF$hex', radix: 16));
+    }
+    if (hex.length == 8) {
+      return Color(int.parse(hex, radix: 16));
+    }
+    return const Color(0xFF2E7D32);
+  }
 }
 
 /// Daily Reward Data Model
@@ -170,11 +391,50 @@ class AppState {
 
   int points = 0;
   int pointsEarnedToday = 0;
+  List<RewardItem> rewards = const [
+    RewardItem(name: 'Free Espresso', pointsCost: 100, icon: Icons.local_cafe),
+    RewardItem(name: 'Free Latte', pointsCost: 250, icon: Icons.coffee),
+    RewardItem(name: '20% Discount', pointsCost: 400, icon: Icons.local_offer),
+    RewardItem(name: 'Free Pastry', pointsCost: 500, icon: Icons.bakery_dining),
+    RewardItem(name: 'Free Cold Brew', pointsCost: 700, icon: Icons.local_bar),
+  ];
+  List<Promotion> promotions = const [
+    Promotion(
+      title: 'Buy 1 Get 1',
+      subtitle: 'On all espresso drinks',
+      validUntil: 'July 31',
+      color: Color(0xFF2E7D32),
+      icon: Icons.redeem,
+    ),
+    Promotion(
+      title: 'Happy Hour',
+      subtitle: '50% off from 2PM – 4PM',
+      validUntil: 'August 15',
+      color: Color(0xFFBF360C),
+      icon: Icons.access_time,
+    ),
+    Promotion(
+      title: 'Double Points',
+      subtitle: 'Earn 2× points on every purchase',
+      validUntil: 'July 20',
+      color: Color(0xFF1565C0),
+      icon: Icons.star,
+    ),
+    Promotion(
+      title: 'Birthday Treat',
+      subtitle: 'Free drink on your birthday',
+      validUntil: 'Ongoing',
+      color: Color(0xFF6A1B9A),
+      icon: Icons.cake,
+    ),
+  ];
 
   // Daily reward state
   int dailyRewardStreak = 0;
   DateTime? lastDailyRewardDate;
   bool dailyRewardClaimedToday = false;
+
+  bool get isAdmin => user.isAdmin;
 
   String get membership {
     if (points >= 1000) return 'Gold';
@@ -193,7 +453,7 @@ class AppState {
 
   List<AppTransaction> transactions = [];
 
-  final List<RewardItem> rewards = const [
+  List<RewardItem> get defaultRewards => const [
     RewardItem(name: 'Free Espresso', pointsCost: 100, icon: Icons.local_cafe),
     RewardItem(name: 'Free Latte', pointsCost: 250, icon: Icons.coffee),
     RewardItem(name: '20% Discount', pointsCost: 400, icon: Icons.local_offer),
@@ -201,7 +461,7 @@ class AppState {
     RewardItem(name: 'Free Cold Brew', pointsCost: 700, icon: Icons.local_bar),
   ];
 
-  final List<Promotion> promotions = const [
+  List<Promotion> get defaultPromotions => const [
     Promotion(
       title: 'Buy 1 Get 1',
       subtitle: 'On all espresso drinks',
@@ -233,6 +493,13 @@ class AppState {
   ];
 
   RewardItem get nextReward {
+    if (rewards.isEmpty) {
+      return defaultRewards.firstWhere(
+        (r) => r.pointsCost > points,
+        orElse: () => defaultRewards.last,
+      );
+    }
+
     return rewards.firstWhere(
       (r) => r.pointsCost > points,
       orElse: () => rewards.last,

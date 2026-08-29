@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import '../app_state.dart';
+import 'admin_dashboard_screen.dart';
 import 'edit_profile_screen.dart';
 
 class ProfileScreen extends StatelessWidget {
@@ -152,6 +153,26 @@ class ProfileScreen extends StatelessWidget {
                 ),
               ),
             ),
+            if (state.user.isAdmin) ...[
+              const SizedBox(height: 10),
+              _ActionButton(
+                icon: Icons.admin_panel_settings,
+                label: 'Admin Dashboard',
+                color: const Color(0xFF2E7D32),
+                onTap: () async {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => AdminDashboardScreen(
+                        state: state,
+                        onAdminChanged: onProfileUpdated,
+                      ),
+                    ),
+                  );
+                  onProfileUpdated();
+                },
+              ),
+            ],
             const SizedBox(height: 10),
             _ActionButton(
               icon: Icons.lock_outline,

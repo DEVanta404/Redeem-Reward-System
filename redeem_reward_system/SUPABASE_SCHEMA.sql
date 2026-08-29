@@ -19,6 +19,8 @@ ALTER TABLE daily_rewards
 CREATE INDEX IF NOT EXISTS idx_daily_rewards_user_id ON daily_rewards(user_id);
 CREATE INDEX IF NOT EXISTS idx_daily_rewards_claimed_at ON daily_rewards(claimed_at);
 
+DROP FUNCTION IF EXISTS public.claim_daily_reward();
+
 CREATE OR REPLACE FUNCTION public.claim_daily_reward()
 RETURNS TABLE (
   reward_points INT,
@@ -103,48 +105,120 @@ INSERT INTO reward_settings (reward_amount, probability) VALUES
   (100, 0.1)
 ON CONFLICT (reward_amount) DO NOTHING;
 
--- Add indexes for better query performance
 CREATE INDEX IF NOT EXISTS idx_daily_rewards_user_id ON daily_rewards(user_id);
 CREATE INDEX IF NOT EXISTS idx_daily_rewards_claimed_at ON daily_rewards(claimed_at);
 CREATE INDEX IF NOT EXISTS idx_reward_settings_reward_amount ON reward_settings(reward_amount);
 
--- Enable Row Level Security
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS avatar_url TEXT;
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'admin'));
+
+UPDATE profiles
+SET role = 'admin'
+WHERE email = 'kapetoladmin@thekapetol.com';
+
+-- Promotions table: managed by admin, visible to all users.
+CREATE TABLE IF NOT EXISTS promotions (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  title TEXT NOT NULL,
+  subtitle TEXT,
+  description TEXT,
+  valid_until TEXT,
+  image_url TEXT,
+  category TEXT NOT NULL DEFAULT 'general',
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  starts_at TIMESTAMPTZ,
+  ends_at TIMESTAMPTZ,
+  color_hex TEXT DEFAULT '#2E7D32',
+  icon_name TEXT DEFAULT 'redeem',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Rewards table: managed by admin, visible to all users as redeemable items.
+CREATE TABLE IF NOT EXISTS rewards (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT,
+  points_cost INT NOT NULL CHECK (points_cost >= 0),
+  image_url TEXT,
+  category TEXT NOT NULL DEFAULT 'general',
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  stock INT NOT NULL DEFAULT 0,
+  icon_name TEXT DEFAULT 'local_cafe',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 ALTER TABLE daily_rewards ENABLE ROW LEVEL SECURITY;
 ALTER TABLE reward_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE promotions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE rewards ENABLE ROW LEVEL SECURITY;
 
--- Daily Rewards RLS Policy: Users can only see their own records
 DROP POLICY IF EXISTS "Users can view their own daily rewards" ON daily_rewards;
 CREATE POLICY "Users can view their own daily rewards" ON daily_rewards
   FOR SELECT USING (auth.uid() = user_id);
 
--- Daily Rewards RLS Policy: Users can insert their own records
 DROP POLICY IF EXISTS "Users can insert their own daily rewards" ON daily_rewards;
 CREATE POLICY "Users can insert their own daily rewards" ON daily_rewards
   FOR INSERT WITH CHECK (auth.uid() = user_id);
 
--- Daily Rewards RLS Policy: Users can update their own records
 DROP POLICY IF EXISTS "Users can update their own daily rewards" ON daily_rewards;
 CREATE POLICY "Users can update their own daily rewards" ON daily_rewards
   FOR UPDATE USING (auth.uid() = user_id);
 
--- Reward Settings RLS Policy: Everyone can view reward settings (public)
 DROP POLICY IF EXISTS "Everyone can view reward settings" ON reward_settings;
 CREATE POLICY "Everyone can view reward settings" ON reward_settings
   FOR SELECT USING (true);
 
-ALTER TABLE profiles ADD COLUMN IF NOT EXISTS avatar_url TEXT;
+DROP POLICY IF EXISTS "Users can view own profile" ON profiles;
+CREATE POLICY "Users can view own profile" ON profiles
+  FOR SELECT USING (auth.uid() = id);
 
--- Profiles table RLS (make sure points can be updated)
--- Only the user themselves can update their points
 DROP POLICY IF EXISTS "Users can update own profile points" ON profiles;
 CREATE POLICY "Users can update own profile points" ON profiles
   FOR UPDATE USING (auth.uid() = id)
   WITH CHECK (auth.uid() = id);
 
--- Profiles table RLS: Users can view their own profile
-DROP POLICY IF EXISTS "Users can view own profile" ON profiles;
-CREATE POLICY "Users can view own profile" ON profiles
-  FOR SELECT USING (auth.uid() = id);
+DROP POLICY IF EXISTS "Admins can manage promotions" ON promotions;
+CREATE POLICY "Admins can manage promotions" ON promotions
+  FOR ALL USING (
+    EXISTS (
+      SELECT 1 FROM public.profiles
+      WHERE profiles.id = auth.uid() AND profiles.role = 'admin'
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM public.profiles
+      WHERE profiles.id = auth.uid() AND profiles.role = 'admin'
+    )
+  );
+
+DROP POLICY IF EXISTS "Public can view active promotions" ON promotions;
+CREATE POLICY "Public can view active promotions" ON promotions
+  FOR SELECT USING (is_active = true);
+
+DROP POLICY IF EXISTS "Admins can manage rewards" ON rewards;
+CREATE POLICY "Admins can manage rewards" ON rewards
+  FOR ALL USING (
+    EXISTS (
+      SELECT 1 FROM public.profiles
+      WHERE profiles.id = auth.uid() AND profiles.role = 'admin'
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM public.profiles
+      WHERE profiles.id = auth.uid() AND profiles.role = 'admin'
+    )
+  );
+
+DROP POLICY IF EXISTS "Public can view active rewards" ON rewards;
+CREATE POLICY "Public can view active rewards" ON rewards
+  FOR SELECT USING (is_active = true);
+
+-- Note: Role escalation is prevented by restricting UPDATE access to role field.
+-- Regular users cannot modify their own role through the app - only admins can manage roles.
 
 -- Optional: create a public storage bucket named 'avatars' in Supabase
 -- Then upload images to avatars/<user_id>/profile.ext and keep the public URL in avatar_url.

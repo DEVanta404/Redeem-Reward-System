@@ -1,10 +1,36 @@
 import 'package:flutter/material.dart';
 import '../app_state.dart';
 
-class PromotionsScreen extends StatelessWidget {
+class PromotionsScreen extends StatefulWidget {
   final List<Promotion> promotions;
 
   const PromotionsScreen({super.key, required this.promotions});
+
+  @override
+  State<PromotionsScreen> createState() => _PromotionsScreenState();
+}
+
+class _PromotionsScreenState extends State<PromotionsScreen>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // Refresh when returning to this screen
+      setState(() {});
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -20,9 +46,9 @@ class PromotionsScreen extends StatelessWidget {
       ),
       body: ListView.builder(
         padding: const EdgeInsets.all(20),
-        itemCount: promotions.length,
+        itemCount: widget.promotions.length,
         itemBuilder: (context, i) =>
-            _PromoCard(promo: promotions[i]),
+            _PromoCard(promo: widget.promotions[i]),
       ),
     );
   }

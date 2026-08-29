@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../app_state.dart';
+
 class SupabaseProfilesService {
   final SupabaseClient _client = Supabase.instance.client;
 
@@ -57,6 +59,7 @@ class SupabaseProfilesService {
       'id': userId,
       'name': username ?? fullName ?? email.split('@').first,
       'email': email,
+      'role': 'user',
     };
     if (phone != null) {
       payload['phone'] = phone;
@@ -127,6 +130,113 @@ class SupabaseProfilesService {
     }
   }
 
+  Future<List<Promotion>> getPromotions({bool activeOnly = false}) async {
+    try {
+      final query = _client.from('promotions').select().order('created_at', ascending: false);
+      final response = activeOnly
+          ? await _client.from('promotions').select().eq('is_active', true).order('created_at', ascending: false)
+          : await query;
+      final rows = response as List<dynamic>;
+      return rows
+          .map((row) => Promotion.fromMap(Map<String, dynamic>.from(row)))
+          .toList();
+    } catch (error) {
+      debugPrint('Failed to load promotions: $error');
+      return const [];
+    }
+  }
+
+  Future<List<RewardItem>> getRewards({bool activeOnly = false}) async {
+    try {
+      final query = _client.from('rewards').select().order('created_at', ascending: false);
+      final response = activeOnly
+          ? await _client.from('rewards').select().eq('is_active', true).order('created_at', ascending: false)
+          : await query;
+      final rows = response as List<dynamic>;
+      return rows
+          .map((row) => RewardItem.fromMap(Map<String, dynamic>.from(row)))
+          .toList();
+    } catch (error) {
+      debugPrint('Failed to load rewards: $error');
+      return const [];
+    }
+  }
+
+  Future<void> upsertPromotion(Promotion promotion) async {
+    try {
+      final payload = {
+        'title': promotion.title,
+        'subtitle': promotion.subtitle,
+        'description': promotion.description,
+        'valid_until': promotion.validUntil,
+        'category': promotion.category,
+        'is_active': promotion.isActive,
+        'starts_at': promotion.startDate?.toUtc().toIso8601String(),
+        'ends_at': promotion.endDate?.toUtc().toIso8601String(),
+        'color_hex': '#${promotion.color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}',
+        'icon_name': promotion.icon.toString(),
+      };
+
+      if (promotion.imageUrl.trim().isNotEmpty) {
+        payload['image_url'] = promotion.imageUrl;
+      }
+
+      if (promotion.id.isNotEmpty) {
+        await _client.from('promotions').update(payload).eq('id', promotion.id);
+      } else {
+        await _client.from('promotions').insert(payload);
+      }
+    } catch (error) {
+      debugPrint('Failed to save promotion: $error');
+      rethrow;
+    }
+  }
+
+  Future<void> deletePromotion(String id) async {
+    try {
+      await _client.from('promotions').delete().eq('id', id);
+    } catch (error) {
+      debugPrint('Failed to delete promotion: $error');
+      rethrow;
+    }
+  }
+
+  Future<void> upsertReward(RewardItem reward) async {
+    try {
+      final payload = {
+        'name': reward.name,
+        'description': reward.description,
+        'points_cost': reward.pointsCost,
+        'category': reward.category,
+        'is_active': reward.isActive,
+        'stock': reward.stock,
+        'icon_name': reward.icon.toString(),
+      };
+
+      if (reward.imageUrl.trim().isNotEmpty) {
+        payload['image_url'] = reward.imageUrl;
+      }
+
+      if (reward.id.isNotEmpty) {
+        await _client.from('rewards').update(payload).eq('id', reward.id);
+      } else {
+        await _client.from('rewards').insert(payload);
+      }
+    } catch (error) {
+      debugPrint('Failed to save reward: $error');
+      rethrow;
+    }
+  }
+
+  Future<void> deleteReward(String id) async {
+    try {
+      await _client.from('rewards').delete().eq('id', id);
+    } catch (error) {
+      debugPrint('Failed to delete reward: $error');
+      rethrow;
+    }
+  }
+
   /// Optional: subscribe to realtime updates for a profile's row.
   Stream<List<Map<String, dynamic>>> streamProfile(String userId) {
     return _client
@@ -138,7 +248,7 @@ class SupabaseProfilesService {
 
   Future<String?> getEmailByName(String username) async {
     try {
-      print("Searching username: '$username'");
+      debugPrint("Searching username: '$username'");
 
       final response = await _client
           .from('profiles')
@@ -146,7 +256,7 @@ class SupabaseProfilesService {
           .eq('name', username)
           .maybeSingle();
 
-      print('Query result: $response');
+      debugPrint('Query result: $response');
 
       return response == null ? null : response['email']?.toString();
     } catch (error) {

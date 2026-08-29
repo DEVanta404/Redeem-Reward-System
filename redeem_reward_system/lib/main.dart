@@ -17,7 +17,10 @@ const supabaseAnonKey =
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Supabase.initialize(url: supabaseUrl, anonKey: supabaseAnonKey);
+  await Supabase.initialize(
+    url: supabaseUrl,
+    publishableKey: supabaseAnonKey,
+  );
 
   runApp(const RewardApp());
 }
@@ -61,10 +64,13 @@ class _AppFlowState extends State<AppFlow> {
       birthday: '',
       avatarPath: '',
       avatarUrl: '',
+      role: 'user',
     );
     _state.points = 0;
     _state.pointsEarnedToday = 0;
     _state.transactions = [];
+    _state.rewards = [];
+    _state.promotions = [];
     _state.dailyRewardStreak = 0;
     _state.lastDailyRewardDate = null;
     _state.dailyRewardClaimedToday = false;
@@ -106,12 +112,17 @@ class _AppFlowState extends State<AppFlow> {
       final points = int.tryParse(profile['points']?.toString() ?? '0') ?? 0;
       final userId = profile['id']?.toString() ?? '';
       final avatarUrl = profile['avatar_url']?.toString() ?? '';
+      final role = profile['role']?.toString() ?? 'user';
 
       debugPrint(
-        'Loaded profile from Supabase: name=$name, email=$email, birthday=$birthday, points=$points, avatarUrl=$avatarUrl',
+        'Loaded profile from Supabase: name=$name, email=$email, birthday=$birthday, points=$points, role=$role, avatarUrl=$avatarUrl',
       );
 
       if (name.isNotEmpty) {
+        final service = SupabaseProfilesService();
+        final promotions = await service.getPromotions(activeOnly: true);
+        final rewards = await service.getRewards(activeOnly: true);
+
         setState(() {
           _state.user = _state.user.copyWith(
             id: userId,
@@ -121,10 +132,13 @@ class _AppFlowState extends State<AppFlow> {
             birthday: birthday,
             avatarPath: '',
             avatarUrl: avatarUrl,
+            role: role,
           );
           _state.points = points;
           _state.pointsEarnedToday = 0;
           _state.transactions = [];
+          _state.promotions = promotions;
+          _state.rewards = rewards;
         });
       }
     } else {

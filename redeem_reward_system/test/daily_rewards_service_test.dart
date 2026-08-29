@@ -1,8 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapetol_app/services/daily_rewards_service.dart';
 
-enum _ExpectedState { ready, cooldown }
-
 void main() {
   test('uses the actual claim timestamp for a 20-hour cooldown', () {
     final claimTime = DateTime(2026, 8, 29, 20, 30, 0);

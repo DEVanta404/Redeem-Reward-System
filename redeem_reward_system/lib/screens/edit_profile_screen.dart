@@ -64,7 +64,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             toolbarTitle: 'Crop Profile Photo',
             toolbarColor: const Color(0xFF3E2723),
             toolbarWidgetColor: Colors.white,
-            statusBarColor: const Color(0xFF3E2723),
+            statusBarLight: false,
             backgroundColor: Colors.black,
             initAspectRatio: CropAspectRatioPreset.square,
             lockAspectRatio: true,

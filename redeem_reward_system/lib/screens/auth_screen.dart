@@ -175,7 +175,7 @@ class _AuthFormState extends State<_AuthForm> {
 
         final emailFromName = await SupabaseProfilesService()
             .getEmailByName(name.trim());
-        print('Resolved email: $emailFromName');
+        debugPrint('Resolved email: $emailFromName');
         if (emailFromName == null || emailFromName.isEmpty) {
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
