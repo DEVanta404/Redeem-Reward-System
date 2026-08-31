@@ -174,7 +174,7 @@ class SupabaseProfilesService {
         'starts_at': promotion.startDate?.toUtc().toIso8601String(),
         'ends_at': promotion.endDate?.toUtc().toIso8601String(),
         'color_hex': '#${promotion.color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}',
-        'icon_name': promotion.icon.toString(),
+        'icon_name': Promotion.iconName(promotion.icon),
       };
 
       if (promotion.imageUrl.trim().isNotEmpty) {
@@ -210,7 +210,7 @@ class SupabaseProfilesService {
         'category': reward.category,
         'is_active': reward.isActive,
         'stock': reward.stock,
-        'icon_name': reward.icon.toString(),
+        'icon_name': RewardItem.iconName(reward.icon),
       };
 
       if (reward.imageUrl.trim().isNotEmpty) {

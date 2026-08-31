@@ -36,9 +36,13 @@ DECLARE
   last_claim daily_rewards%ROWTYPE;
   new_streak INT := 1;
   current_points INT;
-  reward_amount INT;
+  selected_reward_amount INT;
   claim_time TIMESTAMPTZ := now();
   next_claim_time TIMESTAMPTZ;
+  v_reward_points INT;
+  v_streak_day INT;
+  v_new_points INT;
+  v_claimed_at TIMESTAMPTZ;
 BEGIN
   IF current_user_id IS NULL THEN
     RAISE EXCEPTION 'AUTH_REQUIRED: User must be signed in to claim the daily reward.';
@@ -59,9 +63,9 @@ BEGIN
     new_streak := last_claim.streak_day + 1;
   END IF;
 
-  SELECT reward_amount
-  INTO reward_amount
-  FROM public.reward_settings
+  SELECT rs.reward_amount
+  INTO selected_reward_amount
+  FROM public.reward_settings AS rs
   ORDER BY random()
   LIMIT 1;
 
@@ -74,9 +78,14 @@ BEGIN
   END IF;
 
   INSERT INTO public.daily_rewards (user_id, reward_points, streak_day, claimed_at)
-  VALUES (current_user_id, reward_amount, new_streak, claim_time)
-  RETURNING reward_points, streak_day, (current_points + reward_amount), claimed_at
-  INTO reward_points, streak_day, new_points, claimed_at;
+  VALUES (current_user_id, selected_reward_amount, new_streak, claim_time)
+  RETURNING reward_points, streak_day, (current_points + selected_reward_amount), claimed_at
+  INTO v_reward_points, v_streak_day, v_new_points, v_claimed_at;
+
+  reward_points := v_reward_points;
+  streak_day := v_streak_day;
+  new_points := v_new_points;
+  claimed_at := v_claimed_at;
 
   RETURN NEXT;
 END;

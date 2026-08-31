@@ -82,7 +82,7 @@ class RewardItem {
 
   factory RewardItem.fromMap(Map<String, dynamic> map) {
     final iconName = (map['icon_name'] ?? map['icon'] ?? 'local_cafe').toString();
-    final icon = _iconFromString(iconName);
+    final icon = iconFromName(iconName);
 
     return RewardItem(
       id: map['id']?.toString() ?? '',
@@ -106,19 +106,92 @@ class RewardItem {
     'category': category,
     'is_active': isActive,
     'stock': stock,
+    'icon_name': iconName(icon),
   };
 
-  static IconData _iconFromString(String value) {
-    switch (value) {
-      case 'coffee':
-        return Icons.coffee;
+  static String iconName(IconData icon) {
+    switch (icon.codePoint) {
+      case 0xe8b5:
+        return 'redeem';
+      case 0xe87e:
+        return 'local_offer';
+      case 0xe838:
+        return 'star';
+      case 0xe7e9:
+        return 'cake';
+      case 0xe425:
+        return 'access_time';
+      case 0xe61d:
+        return 'coffee';
+      case 0xeb44:
+      case 0xe6a3:
+        return 'local_cafe';
+      case 0xe7f0:
+        return 'bakery_dining';
+      case 0xe3a7:
+        return 'local_bar';
+      case 0xe6a9:
+        return 'stars';
+      default:
+        return 'local_cafe';
+    }
+  }
+
+  static IconData iconFromName(String value) {
+    final normalized = value.trim();
+    final legacyCode = int.tryParse(normalized);
+    if (legacyCode != null) {
+      return _iconFromLegacyCodePoint(legacyCode);
+    }
+
+    switch (normalized.toLowerCase()) {
+      case 'redeem':
+        return Icons.redeem;
       case 'local_offer':
         return Icons.local_offer;
+      case 'star':
+        return Icons.star;
+      case 'cake':
+        return Icons.cake;
+      case 'access_time':
+        return Icons.access_time;
+      case 'coffee':
+        return Icons.coffee;
+      case 'local_cafe':
+        return Icons.local_cafe;
       case 'bakery_dining':
         return Icons.bakery_dining;
       case 'local_bar':
         return Icons.local_bar;
       case 'stars':
+        return Icons.stars;
+      default:
+        return Icons.local_cafe;
+    }
+  }
+
+  static IconData _iconFromLegacyCodePoint(int codePoint) {
+    switch (codePoint) {
+      case 0xe8b5:
+        return Icons.redeem;
+      case 0xe87e:
+        return Icons.local_offer;
+      case 0xe838:
+        return Icons.star;
+      case 0xe7e9:
+        return Icons.cake;
+      case 0xe425:
+        return Icons.access_time;
+      case 0xe61d:
+        return Icons.coffee;
+      case 0xeb44:
+      case 0xe6a3:
+        return Icons.local_cafe;
+      case 0xe7f0:
+        return Icons.bakery_dining;
+      case 0xe3a7:
+        return Icons.local_bar;
+      case 0xe6a9:
         return Icons.stars;
       default:
         return Icons.local_cafe;
@@ -154,30 +227,17 @@ class Promotion {
   ];
 
   static String iconLabel(IconData icon) {
-    switch (icon.codePoint) {
-      case 0xe8b5: // Icons.redeem
-        return 'Redeem';
-      case 0xe87e: // Icons.local_offer
-        return 'Offer';
-      case 0xe838: // Icons.star
-        return 'Star';
-      case 0xe7e9: // Icons.cake
-        return 'Cake';
-      case 0xe425: // Icons.access_time
-        return 'Time';
-      case 0xe6a3: // Icons.coffee
-        return 'Coffee';
-      case 0xeb44: // Icons.local_cafe
-        return 'Cafe';
-      case 0xe7f0: // Icons.bakery_dining
-        return 'Bakery';
-      case 0xe3a7: // Icons.local_bar
-        return 'Bar';
-      case 0xe6a9: // Icons.stars
-        return 'Stars';
-      default:
-        return 'Icon';
-    }
+    if (icon == Icons.redeem) return 'Gift';
+    if (icon == Icons.local_offer) return 'Discount';
+    if (icon == Icons.star) return 'Featured';
+    if (icon == Icons.cake) return 'Birthday';
+    if (icon == Icons.access_time) return 'Limited Time';
+    if (icon == Icons.coffee) return 'Coffee';
+    if (icon == Icons.local_cafe) return 'Drinks';
+    if (icon == Icons.bakery_dining) return 'Celebration';
+    if (icon == Icons.local_bar) return 'Special Offer';
+    if (icon == Icons.stars) return 'Premium';
+    return 'Gift';
   }
 
   static String formatDateForDisplay(DateTime date) {
@@ -246,7 +306,7 @@ class Promotion {
       subtitle: map['subtitle']?.toString() ?? map['description']?.toString() ?? '',
       validUntil: map['valid_until']?.toString() ?? map['ends_at']?.toString() ?? 'Ongoing',
       color: _colorFromHex(colorHex),
-      icon: _iconFromString(iconName),
+      icon: iconFromName(iconName),
       description: map['description']?.toString() ?? '',
       imageUrl: map['image_url']?.toString() ?? map['imageUrl']?.toString() ?? '',
       category: map['category']?.toString() ?? 'general',
@@ -267,22 +327,94 @@ class Promotion {
     'is_active': isActive,
     'starts_at': startDate?.toUtc().toIso8601String(),
     'ends_at': endDate?.toUtc().toIso8601String(),
-    'icon_name': icon.codePoint.toString(),
+    'icon_name': iconName(icon),
     'color_hex': '#${color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}',
   };
 
-  static IconData _iconFromString(String value) {
-    switch (value) {
-      case 'access_time':
-        return Icons.access_time;
+  static String iconName(IconData icon) {
+    switch (icon.codePoint) {
+      case 0xe8b5:
+        return 'redeem';
+      case 0xe87e:
+        return 'local_offer';
+      case 0xe838:
+        return 'star';
+      case 0xe7e9:
+        return 'cake';
+      case 0xe425:
+        return 'access_time';
+      case 0xe61d:
+        return 'coffee';
+      case 0xeb44:
+      case 0xe6a3:
+        return 'local_cafe';
+      case 0xe7f0:
+        return 'bakery_dining';
+      case 0xe3a7:
+        return 'local_bar';
+      case 0xe6a9:
+        return 'stars';
+      default:
+        return 'redeem';
+    }
+  }
+
+  static IconData iconFromName(String value) {
+    final normalized = value.trim();
+    final legacyCode = int.tryParse(normalized);
+    if (legacyCode != null) {
+      return _iconFromLegacyCodePoint(legacyCode);
+    }
+
+    switch (normalized.toLowerCase()) {
+      case 'redeem':
+        return Icons.redeem;
+      case 'local_offer':
+        return Icons.local_offer;
       case 'star':
         return Icons.star;
       case 'cake':
         return Icons.cake;
-      case 'local_offer':
-        return Icons.local_offer;
-      case 'redeem':
+      case 'access_time':
+        return Icons.access_time;
+      case 'coffee':
+        return Icons.coffee;
+      case 'local_cafe':
+        return Icons.local_cafe;
+      case 'bakery_dining':
+        return Icons.bakery_dining;
+      case 'local_bar':
+        return Icons.local_bar;
+      case 'stars':
+        return Icons.stars;
+      default:
         return Icons.redeem;
+    }
+  }
+
+  static IconData _iconFromLegacyCodePoint(int codePoint) {
+    switch (codePoint) {
+      case 0xe8b5:
+        return Icons.redeem;
+      case 0xe87e:
+        return Icons.local_offer;
+      case 0xe838:
+        return Icons.star;
+      case 0xe7e9:
+        return Icons.cake;
+      case 0xe425:
+        return Icons.access_time;
+      case 0xe61d:
+        return Icons.coffee;
+      case 0xeb44:
+      case 0xe6a3:
+        return Icons.local_cafe;
+      case 0xe7f0:
+        return Icons.bakery_dining;
+      case 0xe3a7:
+        return Icons.local_bar;
+      case 0xe6a9:
+        return Icons.stars;
       default:
         return Icons.redeem;
     }

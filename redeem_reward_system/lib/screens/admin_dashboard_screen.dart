@@ -336,14 +336,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                               Icon(icon),
                               const SizedBox(width: 8),
                               Text(
-                                switch (icon.codePoint) {
-                                  0xe61d => 'Coffee',
-                                  0xe87e => 'Offer',
-                                  0xe7f0 => 'Bakery',
-                                  0xe3a7 => 'Bar',
-                                  0xe838 => 'Stars',
-                                  0xe8b5 => 'Redeem',
-                                  _ => 'Cafe',
+                                switch (icon) {
+                                  Icons.local_cafe => 'Coffee',
+                                  Icons.coffee => 'Espresso',
+                                  Icons.local_offer => 'Gift',
+                                  Icons.bakery_dining => 'Pastry',
+                                  Icons.local_bar => 'Drink',
+                                  Icons.stars => 'Premium',
+                                  Icons.redeem => 'Voucher',
+                                  _ => 'Special',
                                 },
                               ),
                             ],

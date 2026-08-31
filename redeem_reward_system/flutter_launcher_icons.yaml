@@ -2,7 +2,7 @@ flutter_launcher_icons:
   image_path: "assets/kapetol_icon.png"
   android: true
   ios: false
-  adaptive_icon_background: "#000000"
+  adaptive_icon_background: "#FFFFFF"
   adaptive_icon_foreground: "assets/kapetol_icon.png"
   adaptive_icon_monochrome: "assets/kapetol_icon.png"
   web:

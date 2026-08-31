@@ -136,17 +136,17 @@ class _HomeScreenState extends State<HomeScreen> {
           ? DateTime.tryParse(claimedAtValue)?.toLocal() ?? DateTime.now()
           : DateTime.now();
 
-      debugPrint('Reward: $reward');
-      debugPrint('Streak: $streakDay');
-      debugPrint('New points: $newPoints');
-      debugPrint('Claimed at: ${claimedAt.toUtc()}');
+      debugPrint('Reward from Supabase: $reward');
+      debugPrint('Streak from Supabase: $streakDay');
+      debugPrint('New points from Supabase: $newPoints');
+      debugPrint('Claimed at from Supabase: ${claimedAt.toUtc()}');
       debugPrint('Now: ${DateTime.now().toUtc()}');
       debugPrint(
         'Computed remaining: ${DailyRewardsService.getCooldownRemainingForClaim(claimTime: claimedAt, now: DateTime.now())}',
       );
 
       // ============================================================
-      // Update local state immediately from the actual claim timestamp.
+      // Always trust the server-issued values from Supabase.
       // ============================================================
       widget.state.points = newPoints;
       _rewardResetAt = claimedAt.add(const Duration(hours: 20));
@@ -156,8 +156,7 @@ class _HomeScreenState extends State<HomeScreen> {
       );
 
       // ============================================================
-      // Now show the animation.
-      // The reward was already securely determined by Supabase.
+      // Show the existing animation using the server-issued reward.
       // ============================================================
       if (!mounted) return;
       await Navigator.push(

@@ -210,6 +210,16 @@ class DailyRewardsService {
       final response = await _client.rpc('claim_daily_reward');
       debugPrint('RPC response: $response');
 
+      if (response is List && response.isNotEmpty) {
+        final firstItem = response.first;
+        if (firstItem is Map<String, dynamic>) {
+          return firstItem;
+        }
+        if (firstItem is Map) {
+          return Map<String, dynamic>.from(firstItem);
+        }
+      }
+
       if (response is Map<String, dynamic>) {
         return response;
       }
