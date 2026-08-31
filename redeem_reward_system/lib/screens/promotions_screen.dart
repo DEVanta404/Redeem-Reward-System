@@ -44,12 +44,38 @@ class _PromotionsScreenState extends State<PromotionsScreen>
         elevation: 0,
         iconTheme: const IconThemeData(color: Color(0xFF3E2723)),
       ),
-      body: ListView.builder(
-        padding: const EdgeInsets.all(20),
-        itemCount: widget.promotions.length,
-        itemBuilder: (context, i) =>
-            _PromoCard(promo: widget.promotions[i]),
-      ),
+      body: widget.promotions.isEmpty
+          ? const Center(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.event_busy_outlined,
+                      size: 52,
+                      color: Color(0xFF8D6E63),
+                    ),
+                    SizedBox(height: 16),
+                    Text(
+                      'No Available Promotion',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF3E2723),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.all(20),
+              itemCount: widget.promotions.length,
+              itemBuilder: (context, i) =>
+                  _PromoCard(promo: widget.promotions[i]),
+            ),
     );
   }
 }

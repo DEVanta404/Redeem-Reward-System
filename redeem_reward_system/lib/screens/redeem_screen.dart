@@ -74,19 +74,45 @@ class _RedeemScreenState extends State<RedeemScreen>
 
           // ── Reward cards ──────────────────────────────────────────
           Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-              itemCount: widget.state.rewards.length,
-              itemBuilder: (context, i) {
-                final reward = widget.state.rewards[i];
-                final canRedeem = widget.state.points >= reward.pointsCost;
-                return _RewardCard(
-                  reward: reward,
-                  canRedeem: canRedeem,
-                  onRedeem: () => _confirmRedeem(context, reward),
-                );
-              },
-            ),
+            child: widget.state.rewards.isEmpty
+                ? const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.card_giftcard_outlined,
+                            size: 52,
+                            color: Color(0xFF8D6E63),
+                          ),
+                          SizedBox(height: 16),
+                          Text(
+                            'No Available Rewards',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF3E2723),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                    itemCount: widget.state.rewards.length,
+                    itemBuilder: (context, i) {
+                      final reward = widget.state.rewards[i];
+                      final canRedeem = widget.state.points >= reward.pointsCost;
+                      return _RewardCard(
+                        reward: reward,
+                        canRedeem: canRedeem,
+                        onRedeem: () => _confirmRedeem(context, reward),
+                      );
+                    },
+                  ),
           ),
         ],
       ),
