@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../app_state.dart';
 import '../services/daily_rewards_service.dart';
+import '../services/supabase_profiles.dart';
 import 'promotions_screen.dart';
 import 'daily_reward_slot_screen.dart';
 
@@ -187,6 +188,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _canClaimToday = true;
       });
       if (error.message.contains('DAILY_REWARD_ALREADY_CLAIMED')) {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('You already claimed your daily reward today!'),
@@ -194,6 +196,7 @@ class _HomeScreenState extends State<HomeScreen> {
         );
         await _loadDailyRewardState();
       } else {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Could not claim reward: ${error.message}')),
         );
@@ -204,6 +207,7 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _canClaimToday = true;
       });
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Something went wrong while claiming your reward.'),
@@ -212,10 +216,41 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _refreshPromotions() async {
+    try {
+      final promotions = await SupabaseProfilesService()
+          .getPromotionsWithClaimStatus(activeOnly: true);
+      if (mounted) {
+        setState(() {
+          widget.state.promotions = promotions;
+        });
+      }
+    } catch (error) {
+      debugPrint('Failed to refresh promotions: $error');
+    }
+  }
+
   @override
   void dispose() {
     _countdownTimer.cancel();
     super.dispose();
+  }
+
+  List<Promotion> _getFilteredAndSortedPromotions() {
+    // Filter out expired promotions and sort (unclaimed first, then claimed)
+    final activePromotions = widget.state.promotions
+        .where((p) => !p.isExpired)
+        .toList();
+
+    // Sort: unclaimed first, then claimed
+    activePromotions.sort((a, b) {
+      if (a.claimedByCurrentUser != b.claimedByCurrentUser) {
+        return a.claimedByCurrentUser ? 1 : -1;
+      }
+      return 0;
+    });
+
+    return activePromotions;
   }
 
   String get _greeting {
@@ -501,9 +536,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
               const SizedBox(height: 8),
-              ...widget.state.promotions
+              ..._getFilteredAndSortedPromotions()
                   .take(2)
-                  .map((p) => _PromoCard(promo: p)),
+                  .map((p) => _PromoCard(promo: p, onClaimed: _refreshPromotions)),
             ],
           ),
         ),
@@ -754,14 +789,18 @@ class _QuickCard extends StatelessWidget {
   }
 }
 
-class _PromoCard extends StatelessWidget {
+class _PromoCard extends StatefulWidget {
   final Promotion promo;
-  const _PromoCard({required this.promo});
+  final VoidCallback? onClaimed;
+  const _PromoCard({required this.promo, this.onClaimed});
 
   @override
-  Widget build(BuildContext context) {
-    final accent = promo.color;
+  State<_PromoCard> createState() => _PromoCardState();
+}
 
+class _PromoCardState extends State<_PromoCard> {
+  @override
+  Widget build(BuildContext context) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(12),
@@ -804,14 +843,14 @@ class _PromoCard extends StatelessWidget {
                 width: 42,
                 height: 42,
                 decoration: BoxDecoration(
-                  color: accent.withValues(alpha: 0.18),
+                  color: const Color(0xFFC19A6B).withValues(alpha: 0.16),
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(
-                    color: accent.withValues(alpha: 0.35),
+                    color: const Color(0xFFC19A6B).withValues(alpha: 0.4),
                     width: 1,
                   ),
                 ),
-                child: Icon(promo.icon, color: accent, size: 22),
+                child: Icon(widget.promo.icon, color: const Color(0xFFD4A574), size: 22),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -824,19 +863,19 @@ class _PromoCard extends StatelessWidget {
                         vertical: 5,
                       ),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF7D9180).withValues(alpha: 0.2),
+                        color: const Color(0xFF9B8B7E).withValues(alpha: 0.18),
                         borderRadius: BorderRadius.circular(999),
                         border: Border.all(
-                          color: const Color(0xFF9AC29F).withValues(alpha: 0.35),
+                          color: const Color(0xFFC19A6B).withValues(alpha: 0.4),
                           width: 1,
                         ),
                       ),
                       child: Text(
-                        promo.category.isNotEmpty
-                            ? promo.category.replaceAll('_', ' ').toUpperCase()
+                        widget.promo.category.isNotEmpty
+                            ? widget.promo.category.replaceAll('_', ' ').toUpperCase()
                             : 'PROMO',
-                        style: TextStyle(
-                          color: const Color(0xFFB7E0C0),
+                        style: const TextStyle(
+                          color: Color(0xFFD4A574),
                           fontSize: 9,
                           fontWeight: FontWeight.bold,
                           letterSpacing: 0.7,
@@ -845,7 +884,7 @@ class _PromoCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      promo.title,
+                      widget.promo.title,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
@@ -855,10 +894,10 @@ class _PromoCard extends StatelessWidget {
                         height: 1.25,
                       ),
                     ),
-                    if (promo.subtitle.isNotEmpty) ...[
+                    if (widget.promo.subtitle.isNotEmpty) ...[
                       const SizedBox(height: 2),
                       Text(
-                        promo.subtitle,
+                        widget.promo.subtitle,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
@@ -875,18 +914,18 @@ class _PromoCard extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF5E8CD).withValues(alpha: 0.12),
+                  color: const Color(0xFFD4A574).withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(
-                    color: const Color(0xFFFFD881).withValues(alpha: 0.32),
+                    color: const Color(0xFFD4A574).withValues(alpha: 0.35),
                     width: 1,
                   ),
                 ),
                 child: Text(
-                  'Until ${promo.validUntil}',
-                  style: TextStyle(
+                  'Until ${widget.promo.validUntil}',
+                  style: const TextStyle(
                     fontSize: 10,
-                    color: const Color(0xFFFFD881),
+                    color: Color(0xFFD4A574),
                     fontWeight: FontWeight.w700,
                   ),
                 ),

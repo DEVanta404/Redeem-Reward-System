@@ -120,7 +120,7 @@ class _AppFlowState extends State<AppFlow> {
 
       if (name.isNotEmpty) {
         final service = SupabaseProfilesService();
-        final promotions = await service.getPromotions(activeOnly: true);
+        final promotions = await service.getPromotionsWithClaimStatus(activeOnly: true);
         final rewards = await service.getRewards(activeOnly: true);
 
         setState(() {

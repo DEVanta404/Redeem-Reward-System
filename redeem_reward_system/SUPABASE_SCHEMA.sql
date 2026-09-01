@@ -158,10 +158,24 @@ CREATE TABLE IF NOT EXISTS rewards (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Promotion Claims table: tracks which users have claimed which promotions
+CREATE TABLE IF NOT EXISTS promotion_claims (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  promotion_id UUID NOT NULL REFERENCES promotions(id) ON DELETE CASCADE,
+  claimed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(user_id, promotion_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_promotion_claims_user_id ON promotion_claims(user_id);
+CREATE INDEX IF NOT EXISTS idx_promotion_claims_promotion_id ON promotion_claims(promotion_id);
+
 ALTER TABLE daily_rewards ENABLE ROW LEVEL SECURITY;
 ALTER TABLE reward_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE promotions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE rewards ENABLE ROW LEVEL SECURITY;
+ALTER TABLE promotion_claims ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Users can view their own daily rewards" ON daily_rewards;
 CREATE POLICY "Users can view their own daily rewards" ON daily_rewards
@@ -225,6 +239,14 @@ CREATE POLICY "Admins can manage rewards" ON rewards
 DROP POLICY IF EXISTS "Public can view active rewards" ON rewards;
 CREATE POLICY "Public can view active rewards" ON rewards
   FOR SELECT USING (is_active = true);
+
+DROP POLICY IF EXISTS "Users can view their own promotion claims" ON promotion_claims;
+CREATE POLICY "Users can view their own promotion claims" ON promotion_claims
+  FOR SELECT USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can insert their own promotion claims" ON promotion_claims;
+CREATE POLICY "Users can insert their own promotion claims" ON promotion_claims
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
 
 -- Note: Role escalation is prevented by restricting UPDATE access to role field.
 -- Regular users cannot modify their own role through the app - only admins can manage roles.

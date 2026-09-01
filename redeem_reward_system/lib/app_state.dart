@@ -198,6 +198,7 @@ class Promotion {
   final bool isActive;
   final DateTime? startDate;
   final DateTime? endDate;
+  final bool claimedByCurrentUser;
 
   static const List<IconData> adminIconOptions = [
     Icons.redeem,
@@ -280,6 +281,7 @@ class Promotion {
     this.isActive = true,
     this.startDate,
     this.endDate,
+    this.claimedByCurrentUser = false,
   });
 
   factory Promotion.fromMap(Map<String, dynamic> map) {
@@ -299,6 +301,7 @@ class Promotion {
       isActive: map['is_active'] == true || map['isActive'] == true,
       startDate: map['starts_at'] != null ? DateTime.tryParse(map['starts_at'].toString()) : null,
       endDate: map['ends_at'] != null ? DateTime.tryParse(map['ends_at'].toString()) : null,
+      claimedByCurrentUser: map['claimed_by_current_user'] == true,
     );
   }
 
@@ -402,6 +405,15 @@ class Promotion {
     }
     return const Color(0xFF2E7D32);
   }
+
+  /// Check if this promotion has expired based on endDate
+  bool get isExpired {
+    if (endDate == null) return false;
+    return DateTime.now().isAfter(endDate!);
+  }
+
+  /// Check if this promotion is currently active and not expired
+  bool get isCurrentlyActive => isActive && !isExpired;
 }
 
 /// Daily Reward Data Model

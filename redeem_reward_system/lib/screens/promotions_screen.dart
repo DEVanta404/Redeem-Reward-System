@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../app_state.dart';
+import '../services/supabase_profiles.dart';
 
 class PromotionsScreen extends StatefulWidget {
   final List<Promotion> promotions;
@@ -12,9 +13,13 @@ class PromotionsScreen extends StatefulWidget {
 
 class _PromotionsScreenState extends State<PromotionsScreen>
     with WidgetsBindingObserver {
+  late List<Promotion> _currentPromotions;
+  bool _isLoading = false;
+
   @override
   void initState() {
     super.initState();
+    _currentPromotions = widget.promotions;
     WidgetsBinding.instance.addObserver(this);
   }
 
@@ -28,12 +33,46 @@ class _PromotionsScreenState extends State<PromotionsScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       // Refresh when returning to this screen
-      setState(() {});
+      _refreshPromotions();
+    }
+  }
+
+  Future<void> _refreshPromotions() async {
+    if (_isLoading) return;
+    
+    setState(() => _isLoading = true);
+    try {
+      final promotions = await SupabaseProfilesService()
+          .getPromotionsWithClaimStatus(activeOnly: true);
+      if (mounted) {
+        setState(() {
+          _currentPromotions = promotions;
+          _isLoading = false;
+        });
+      }
+    } catch (error) {
+      debugPrint('Failed to refresh promotions: $error');
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    // Filter out expired promotions and sort (unclaimed first, then claimed)
+    final activePromotions = _currentPromotions
+        .where((p) => !p.isExpired)
+        .toList();
+
+    // Sort: unclaimed first, then claimed
+    activePromotions.sort((a, b) {
+      if (a.claimedByCurrentUser != b.claimedByCurrentUser) {
+        return a.claimedByCurrentUser ? 1 : -1;
+      }
+      return 0;
+    });
+
     return Scaffold(
       backgroundColor: const Color(0xFFF5F0E8),
       appBar: AppBar(
@@ -48,7 +87,7 @@ class _PromotionsScreenState extends State<PromotionsScreen>
         elevation: 0,
         iconTheme: const IconThemeData(color: Color(0xFF3E2723)),
       ),
-      body: widget.promotions.isEmpty
+      body: activePromotions.isEmpty
           ? const Center(
               child: Padding(
                 padding: EdgeInsets.all(24),
@@ -76,25 +115,31 @@ class _PromotionsScreenState extends State<PromotionsScreen>
             )
           : ListView.separated(
               padding: const EdgeInsets.fromLTRB(18, 10, 18, 24),
-              itemCount: widget.promotions.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 14),
+              itemCount: activePromotions.length,
+              separatorBuilder: (context, index) => const SizedBox(height: 14),
               itemBuilder: (context, i) => _PromoCard(
-                promo: widget.promotions[i],
+                promo: activePromotions[i],
+                onClaimed: _refreshPromotions,
               ),
             ),
     );
   }
 }
 
-class _PromoCard extends StatelessWidget {
+class _PromoCard extends StatefulWidget {
   final Promotion promo;
-  const _PromoCard({required this.promo});
+  final VoidCallback? onClaimed;
+  const _PromoCard({required this.promo, this.onClaimed});
 
   @override
+  State<_PromoCard> createState() => _PromoCardState();
+}
+
+class _PromoCardState extends State<_PromoCard> {
+  @override
   Widget build(BuildContext context) {
-    final accent = promo.color;
-    final badgeLabel = (promo.category.isNotEmpty)
-        ? promo.category.replaceAll('_', ' ').toUpperCase()
+    final badgeLabel = (widget.promo.category.isNotEmpty)
+        ? widget.promo.category.replaceAll('_', ' ').toUpperCase()
         : 'PROMO';
 
     return Container(
@@ -141,14 +186,14 @@ class _PromoCard extends StatelessWidget {
                     width: 52,
                     height: 52,
                     decoration: BoxDecoration(
-                      color: accent.withValues(alpha: 0.18),
+                      color: const Color(0xFFC19A6B).withValues(alpha: 0.16),
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                        color: accent.withValues(alpha: 0.35),
+                        color: const Color(0xFFC19A6B).withValues(alpha: 0.4),
                         width: 1,
                       ),
                     ),
-                    child: Icon(promo.icon, color: accent, size: 25),
+                    child: Icon(widget.promo.icon, color: const Color(0xFFD4A574), size: 25),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -161,17 +206,17 @@ class _PromoCard extends StatelessWidget {
                             vertical: 5,
                           ),
                           decoration: BoxDecoration(
-                            color: const Color(0xFF7D9180).withValues(alpha: 0.2),
+                            color: const Color(0xFF9B8B7E).withValues(alpha: 0.18),
                             borderRadius: BorderRadius.circular(999),
                             border: Border.all(
-                              color: const Color(0xFF9AC29F).withValues(alpha: 0.35),
+                              color: const Color(0xFFC19A6B).withValues(alpha: 0.4),
                               width: 1,
                             ),
                           ),
                           child: Text(
                             badgeLabel,
                             style: const TextStyle(
-                              color: Color(0xFFB7E0C0),
+                              color: Color(0xFFD4A574),
                               fontSize: 9,
                               fontWeight: FontWeight.bold,
                               letterSpacing: 0.7,
@@ -180,7 +225,7 @@ class _PromoCard extends StatelessWidget {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          promo.title,
+                          widget.promo.title,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
@@ -190,10 +235,10 @@ class _PromoCard extends StatelessWidget {
                             height: 1.2,
                           ),
                         ),
-                        if (promo.subtitle.isNotEmpty) ...[
+                        if (widget.promo.subtitle.isNotEmpty) ...[
                           const SizedBox(height: 4),
                           Text(
-                            promo.subtitle,
+                            widget.promo.subtitle,
                             style: const TextStyle(
                               color: Color(0xFFE7DACC),
                               fontSize: 13,
@@ -224,13 +269,13 @@ class _PromoCard extends StatelessWidget {
                     Container(
                       padding: const EdgeInsets.all(6),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFFFD881).withValues(alpha: 0.18),
+                        color: const Color(0xFFD4A574).withValues(alpha: 0.16),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: const Icon(
                         Icons.calendar_today_rounded,
                         size: 14,
-                        color: Color(0xFFFFD881),
+                        color: Color(0xFFD4A574),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -244,9 +289,9 @@ class _PromoCard extends StatelessWidget {
                     ),
                     const Spacer(),
                     Text(
-                      promo.validUntil,
+                      widget.promo.validUntil,
                       style: const TextStyle(
-                        color: Color(0xFFFFD881),
+                        color: Color(0xFFD4A574),
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
                       ),
@@ -259,9 +304,9 @@ class _PromoCard extends StatelessWidget {
                 children: [
                   const Spacer(),
                   ElevatedButton(
-                    onPressed: () => _claim(context),
+                    onPressed: widget.promo.claimedByCurrentUser ? null : () => _claim(),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF2E7D32),
+                      backgroundColor: widget.promo.claimedByCurrentUser ? Colors.grey : const Color(0xFF2E7D32),
                       foregroundColor: Colors.white,
                       elevation: 0,
                       minimumSize: const Size(112, 42),
@@ -271,9 +316,9 @@ class _PromoCard extends StatelessWidget {
                       ),
                       shadowColor: const Color(0xFF2E7D32).withValues(alpha: 0.2),
                     ),
-                    child: const Text(
-                      'Claim',
-                      style: TextStyle(
+                    child: Text(
+                      widget.promo.claimedByCurrentUser ? 'Claimed' : 'Claim',
+                      style: const TextStyle(
                         fontWeight: FontWeight.bold,
                         letterSpacing: 0.2,
                       ),
@@ -288,22 +333,45 @@ class _PromoCard extends StatelessWidget {
     );
   }
 
-  void _claim(BuildContext context) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.check_circle, color: Colors.white),
-            const SizedBox(width: 8),
-            Text('${promo.title} claimed!'),
-          ],
+  void _claim() async {
+    // Capture context before async operation to avoid async gap warning
+    final context = this.context;
+    final service = SupabaseProfilesService();
+    final success = await service.claimPromotion(widget.promo.id);
+
+    if (!mounted) return;
+
+    if (success) {
+      // Refresh promotions from database to get updated claim status
+      widget.onClaimed?.call();
+      
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.check_circle, color: Colors.white),
+              const SizedBox(width: 8),
+              Text('${widget.promo.title} claimed!'),
+            ],
+          ),
+          backgroundColor: widget.promo.color,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
         ),
-        backgroundColor: promo.color,
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 2),
-      ),
-    );
+      );
+    } else {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to claim promotion. Please try again.'),
+          backgroundColor: Colors.red,
+          shape: RoundedRectangleBorder(),
+          behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
   }
 }
