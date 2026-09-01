@@ -110,31 +110,17 @@ class RewardItem {
   };
 
   static String iconName(IconData icon) {
-    switch (icon.codePoint) {
-      case 0xe8b5:
-        return 'redeem';
-      case 0xe87e:
-        return 'local_offer';
-      case 0xe838:
-        return 'star';
-      case 0xe7e9:
-        return 'cake';
-      case 0xe425:
-        return 'access_time';
-      case 0xe61d:
-        return 'coffee';
-      case 0xeb44:
-      case 0xe6a3:
-        return 'local_cafe';
-      case 0xe7f0:
-        return 'bakery_dining';
-      case 0xe3a7:
-        return 'local_bar';
-      case 0xe6a9:
-        return 'stars';
-      default:
-        return 'local_cafe';
-    }
+    if (icon == Icons.redeem) return 'redeem';
+    if (icon == Icons.local_offer) return 'local_offer';
+    if (icon == Icons.star) return 'star';
+    if (icon == Icons.cake) return 'cake';
+    if (icon == Icons.access_time) return 'access_time';
+    if (icon == Icons.coffee) return 'coffee';
+    if (icon == Icons.local_cafe) return 'local_cafe';
+    if (icon == Icons.bakery_dining) return 'bakery_dining';
+    if (icon == Icons.local_bar) return 'local_bar';
+    if (icon == Icons.stars) return 'stars';
+    return 'local_cafe';
   }
 
   static IconData iconFromName(String value) {
@@ -332,31 +318,17 @@ class Promotion {
   };
 
   static String iconName(IconData icon) {
-    switch (icon.codePoint) {
-      case 0xe8b5:
-        return 'redeem';
-      case 0xe87e:
-        return 'local_offer';
-      case 0xe838:
-        return 'star';
-      case 0xe7e9:
-        return 'cake';
-      case 0xe425:
-        return 'access_time';
-      case 0xe61d:
-        return 'coffee';
-      case 0xeb44:
-      case 0xe6a3:
-        return 'local_cafe';
-      case 0xe7f0:
-        return 'bakery_dining';
-      case 0xe3a7:
-        return 'local_bar';
-      case 0xe6a9:
-        return 'stars';
-      default:
-        return 'redeem';
-    }
+    if (icon == Icons.redeem) return 'redeem';
+    if (icon == Icons.local_offer) return 'local_offer';
+    if (icon == Icons.star) return 'star';
+    if (icon == Icons.cake) return 'cake';
+    if (icon == Icons.access_time) return 'access_time';
+    if (icon == Icons.coffee) return 'coffee';
+    if (icon == Icons.local_cafe) return 'local_cafe';
+    if (icon == Icons.bakery_dining) return 'bakery_dining';
+    if (icon == Icons.local_bar) return 'local_bar';
+    if (icon == Icons.stars) return 'stars';
+    return 'redeem';
   }
 
   static IconData iconFromName(String value) {

@@ -37,9 +37,13 @@ class _PromotionsScreenState extends State<PromotionsScreen>
     return Scaffold(
       backgroundColor: const Color(0xFFF5F0E8),
       appBar: AppBar(
-        title: const Text('Promotions',
-            style: TextStyle(
-                fontWeight: FontWeight.bold, color: Color(0xFF3E2723))),
+        title: const Text(
+          'Promotions',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF3E2723),
+          ),
+        ),
         backgroundColor: const Color(0xFFF5F0E8),
         elevation: 0,
         iconTheme: const IconThemeData(color: Color(0xFF3E2723)),
@@ -70,11 +74,13 @@ class _PromotionsScreenState extends State<PromotionsScreen>
                 ),
               ),
             )
-          : ListView.builder(
-              padding: const EdgeInsets.all(20),
+          : ListView.separated(
+              padding: const EdgeInsets.fromLTRB(18, 10, 18, 24),
               itemCount: widget.promotions.length,
-              itemBuilder: (context, i) =>
-                  _PromoCard(promo: widget.promotions[i]),
+              separatorBuilder: (_, __) => const SizedBox(height: 14),
+              itemBuilder: (context, i) => _PromoCard(
+                promo: widget.promotions[i],
+              ),
             ),
     );
   }
@@ -87,166 +93,197 @@ class _PromoCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final accent = promo.color;
+    final badgeLabel = (promo.category.isNotEmpty)
+        ? promo.category.replaceAll('_', ' ').toUpperCase()
+        : 'PROMO';
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 18),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFFFDF9F4),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: const Color(0xFFE6D8C9),
-          width: 1,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            const Color(0xFF4A342D),
+            const Color(0xFF3A2723),
+          ],
         ),
+        borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
+            color: const Color(0xFF2C1D1A).withValues(alpha: 0.35),
+            blurRadius: 14,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: accent.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: accent.withValues(alpha: 0.25),
-                      width: 1,
-                    ),
-                  ),
-                  child: Icon(promo.icon, color: accent, size: 26),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 5,
-                        ),
-                        decoration: BoxDecoration(
-                          color: accent.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text(
-                          (promo.category.isNotEmpty)
-                              ? promo.category.replaceAll('_', ' ').toUpperCase()
-                              : 'PROMO',
-                          style: TextStyle(
-                            color: accent,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 0.8,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        promo.title,
-                        style: const TextStyle(
-                          color: Color(0xFF3E2723),
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      if (promo.subtitle.isNotEmpty) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          promo.subtitle,
-                          style: const TextStyle(
-                            color: Color(0xFF6D4C41),
-                            fontSize: 14,
-                            height: 1.35,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      child: Stack(
+        children: [
+          Positioned(
+            right: -18,
+            top: -18,
+            child: Container(
+              width: 120,
+              height: 120,
               decoration: BoxDecoration(
-                color: const Color(0xFFF0E8DF),
-                borderRadius: BorderRadius.circular(12),
+                color: const Color(0xFF5D4037).withValues(alpha: 0.24),
+                borderRadius: BorderRadius.circular(30),
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.calendar_today_rounded,
-                        size: 15,
-                        color: const Color(0xFF5D4037),
+                  Container(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      color: accent.withValues(alpha: 0.18),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: accent.withValues(alpha: 0.35),
+                        width: 1,
                       ),
-                      const SizedBox(width: 8),
-                      const Text(
-                        'Valid until',
-                        style: TextStyle(
-                          color: Color(0xFF5D4037),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
+                    ),
+                    child: Icon(promo.icon, color: accent, size: 25),
                   ),
-                  Text(
-                    promo.validUntil,
-                    style: TextStyle(
-                      color: accent,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF7D9180).withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                              color: const Color(0xFF9AC29F).withValues(alpha: 0.35),
+                              width: 1,
+                            ),
+                          ),
+                          child: Text(
+                            badgeLabel,
+                            style: const TextStyle(
+                              color: Color(0xFFB7E0C0),
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 0.7,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          promo.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xFFF8F2EA),
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            height: 1.2,
+                          ),
+                        ),
+                        if (promo.subtitle.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            promo.subtitle,
+                            style: const TextStyle(
+                              color: Color(0xFFE7DACC),
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                              height: 1.35,
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
                 ],
               ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const SizedBox(),
-                ElevatedButton(
-                  onPressed: () => _claim(context),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF2E7D32),
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 24,
-                      vertical: 12,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: const Text(
-                    'Claim',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 0.2,
-                    ),
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF5E8CD).withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: const Color(0xFFEAD8B2).withValues(alpha: 0.18),
+                    width: 1,
                   ),
                 ),
-              ],
-            ),
-          ],
-        ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFD881).withValues(alpha: 0.18),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(
+                        Icons.calendar_today_rounded,
+                        size: 14,
+                        color: Color(0xFFFFD881),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Valid until',
+                      style: TextStyle(
+                        color: Color(0xFFE7DACC),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      promo.validUntil,
+                      style: const TextStyle(
+                        color: Color(0xFFFFD881),
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  const Spacer(),
+                  ElevatedButton(
+                    onPressed: () => _claim(context),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF2E7D32),
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      minimumSize: const Size(112, 42),
+                      padding: const EdgeInsets.symmetric(horizontal: 18),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      shadowColor: const Color(0xFF2E7D32).withValues(alpha: 0.2),
+                    ),
+                    child: const Text(
+                      'Claim',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.2,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

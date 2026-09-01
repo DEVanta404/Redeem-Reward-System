@@ -1,4 +1,6 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kapetol_app/app_state.dart';
 import 'package:kapetol_app/services/daily_rewards_service.dart';
 
 void main() {
@@ -24,5 +26,33 @@ void main() {
     );
 
     expect(remaining, Duration.zero);
+  });
+
+  test('RewardItem saves and reloads icon names instead of code points', () {
+    final reward = RewardItem(
+      name: 'Coffee reward',
+      pointsCost: 120,
+      icon: Icons.coffee,
+    );
+
+    final payload = reward.toMap();
+
+    expect(payload['icon_name'], 'coffee');
+    expect(RewardItem.fromMap(payload).icon, Icons.coffee);
+  });
+
+  test('Promotion saves and reloads icon names instead of code points', () {
+    final promotion = Promotion(
+      title: 'Morning perk',
+      subtitle: 'Free coffee',
+      validUntil: '2026-09-30',
+      color: Colors.orange,
+      icon: Icons.local_cafe,
+    );
+
+    final payload = promotion.toMap();
+
+    expect(payload['icon_name'], 'local_cafe');
+    expect(Promotion.fromMap(payload).icon, Icons.local_cafe);
   });
 }
