@@ -91,6 +91,33 @@ class DailyRewardsService {
     }
   }
 
+  /// Read the total reward points earned from daily reward claims today.
+  /// A null result means the database could not be read, so callers can keep
+  /// the current value instead of treating a temporary error as zero.
+  Future<int?> getTodaysRewardPoints(String userId, {DateTime? now}) async {
+    try {
+      final current = now ?? DateTime.now();
+      final startOfDay = DateTime(current.year, current.month, current.day);
+      final startOfTomorrow = startOfDay.add(const Duration(days: 1));
+      final response = await _client
+          .from('daily_rewards')
+          .select('reward_points, claimed_at')
+          .eq('user_id', userId)
+          .gte('claimed_at', startOfDay.toUtc().toIso8601String())
+          .lt('claimed_at', startOfTomorrow.toUtc().toIso8601String());
+
+      return (response as List<dynamic>).fold<int>(
+        0,
+        (total, row) =>
+            total + (int.tryParse(row['reward_points']?.toString() ?? '') ?? 0),
+      );
+    } catch (error, stackTrace) {
+      debugPrint('Error fetching today\'s reward points: $error');
+      debugPrint(stackTrace.toString());
+      return null;
+    }
+  }
+
   /// Calculate the current streak for a user
   /// Returns the streak day (1-7 repeating) and whether streak is active
   Future<DailyRewardStreak> calculateStreak(String userId) async {

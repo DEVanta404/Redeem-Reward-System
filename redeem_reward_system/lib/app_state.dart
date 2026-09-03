@@ -225,6 +225,7 @@ class DealItem {
   final String category;
   final String badge;
   final IconData icon;
+  final bool isActive;
 
   const DealItem({
     required this.id,
@@ -233,7 +234,28 @@ class DealItem {
     required this.category,
     required this.badge,
     required this.icon,
+    this.isActive = true,
   });
+
+  DealItem copyWith({
+    String? id,
+    String? name,
+    String? description,
+    String? category,
+    String? badge,
+    IconData? icon,
+    bool? isActive,
+  }) {
+    return DealItem(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      description: description ?? this.description,
+      category: category ?? this.category,
+      badge: badge ?? this.badge,
+      icon: icon ?? this.icon,
+      isActive: isActive ?? this.isActive,
+    );
+  }
 }
 
 class DealOrder {
@@ -586,46 +608,51 @@ class AppState {
     RewardItem(name: 'Free Pastry', pointsCost: 500, icon: Icons.bakery_dining),
     RewardItem(name: 'Free Cold Brew', pointsCost: 700, icon: Icons.local_bar),
   ];
-  final List<DealItem> deals = const [
-    DealItem(
+  List<DealItem> deals = [
+    const DealItem(
       id: 'brown-sugar-oat-latte',
       name: 'Brown Sugar Oat Latte',
       description: 'Espresso, oat milk, and brown sugar over ice.',
       category: 'Special Drinks',
       badge: 'NEW',
       icon: Icons.local_cafe,
+      isActive: true,
     ),
-    DealItem(
+    const DealItem(
       id: 'baristas-choice',
       name: "Barista's Choice",
       description: 'A handcrafted surprise selected by today\'s barista.',
       category: "Barista's Choice",
       badge: 'TODAY',
       icon: Icons.auto_awesome,
+      isActive: true,
     ),
-    DealItem(
+    const DealItem(
       id: 'seasonal-cold-brew',
       name: 'Seasonal Cold Brew',
       description: 'Our limited seasonal flavor, served chilled.',
       category: 'Seasonal',
       badge: 'LIMITED',
       icon: Icons.local_bar,
+      isActive: true,
     ),
-    DealItem(
+    const DealItem(
       id: 'coffee-break-bundle',
       name: 'Coffee Break Bundle',
       description: 'Two drinks and two pastries for sharing.',
       category: 'Bundles',
       badge: 'BUNDLE',
       icon: Icons.bakery_dining,
+      isActive: true,
     ),
-    DealItem(
+    const DealItem(
       id: 'breakfast-pair',
       name: 'Breakfast Pair',
       description: 'A fresh pastry paired with your choice of coffee.',
       category: 'Food',
       badge: 'FRESH',
       icon: Icons.free_breakfast,
+      isActive: true,
     ),
   ];
   final List<DealOrder> dealOrders = [];

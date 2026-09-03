@@ -13,7 +13,7 @@ class DealsScreen extends StatefulWidget {
 class _DealsScreenState extends State<DealsScreen> {
   String _selectedCategory = 'All';
 
-  List<DealItem> get _deals => widget.state.deals;
+  List<DealItem> get _deals => widget.state.deals.where((deal) => deal.isActive).toList();
 
   List<String> get _categories {
     final categories = _deals.map((deal) => deal.category).toSet().toList();

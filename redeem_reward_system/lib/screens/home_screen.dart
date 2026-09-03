@@ -72,11 +72,16 @@ class _HomeScreenState extends State<HomeScreen> {
       final latestClaimInCooldown = await _dailyRewardsService.getTodaysClaim(
         widget.state.user.id,
       );
+      final pointsEarnedToday = await _dailyRewardsService
+          .getTodaysRewardPoints(widget.state.user.id);
 
       setState(() {
         _dailyStreak = streak.currentStreak;
         _isLuckyDay = (streak.currentStreak + 1) % 7 == 0;
         widget.state.dailyRewardStreak = streak.currentStreak;
+        if (pointsEarnedToday != null) {
+          widget.state.pointsEarnedToday = pointsEarnedToday;
+        }
 
         if (lastClaim != null) {
           _rewardResetAt = lastClaim.claimedAt.add(const Duration(hours: 20));
@@ -167,10 +172,14 @@ class _HomeScreenState extends State<HomeScreen> {
             isLuckyDay: streakDay == 7,
             onRewardClaimed: () async {
               if (!mounted) return false;
+              final persistedPointsToday = await _dailyRewardsService
+                  .getTodaysRewardPoints(widget.state.user.id);
               setState(() {
                 widget.state.points = newPoints;
                 widget.state.lifetimePoints += reward;
-                widget.state.pointsEarnedToday += reward;
+                if (persistedPointsToday != null) {
+                  widget.state.pointsEarnedToday = persistedPointsToday;
+                }
               });
               await _loadDailyRewardState();
               return true;

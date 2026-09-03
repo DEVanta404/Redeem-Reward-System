@@ -9,6 +9,7 @@ import 'screens/redeem_screen.dart';
 import 'screens/deals_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/splash_screen.dart';
+import 'services/daily_rewards_service.dart';
 
 const supabaseUrl = 'https://hlvwhxtneqdsnofhoplr.supabase.co';
 const supabaseAnonKey =
@@ -125,6 +126,8 @@ class _AppFlowState extends State<AppFlow> {
         final transactions = await service.getRecentTransactions(
           userId: userId,
         );
+        final pointsEarnedToday = await DailyRewardsService()
+            .getTodaysRewardPoints(userId);
 
         setState(() {
           _state.user = _state.user.copyWith(
@@ -139,7 +142,9 @@ class _AppFlowState extends State<AppFlow> {
           );
           _state.points = points;
           _state.lifetimePoints = lifetimePoints;
-          _state.pointsEarnedToday = 0;
+          if (pointsEarnedToday != null) {
+            _state.pointsEarnedToday = pointsEarnedToday;
+          }
           _state.transactions = transactions;
           _state.promotions = promotions;
           _state.rewards = rewards;
