@@ -19,6 +19,8 @@ ALTER TABLE daily_rewards
 CREATE INDEX IF NOT EXISTS idx_daily_rewards_user_id ON daily_rewards(user_id);
 CREATE INDEX IF NOT EXISTS idx_daily_rewards_claimed_at ON daily_rewards(claimed_at);
 
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS lifetime_points INT NOT NULL DEFAULT 0;
+
 DROP FUNCTION IF EXISTS public.claim_daily_reward();
 
 CREATE OR REPLACE FUNCTION public.claim_daily_reward()
@@ -36,6 +38,7 @@ DECLARE
   last_claim daily_rewards%ROWTYPE;
   new_streak INT := 1;
   current_points INT;
+  current_lifetime_points INT;
   selected_reward_amount INT;
   claim_time TIMESTAMPTZ := now();
   next_claim_time TIMESTAMPTZ;
@@ -69,13 +72,22 @@ BEGIN
   ORDER BY random()
   LIMIT 1;
 
-  SELECT points INTO current_points
+  SELECT points, lifetime_points
+  INTO current_points, current_lifetime_points
   FROM public.profiles
   WHERE id = current_user_id;
 
   IF current_points IS NULL THEN
     current_points := 0;
   END IF;
+  IF current_lifetime_points IS NULL OR current_lifetime_points < current_points THEN
+    current_lifetime_points := current_points;
+  END IF;
+
+  UPDATE public.profiles
+  SET points = current_points + selected_reward_amount,
+      lifetime_points = current_lifetime_points + selected_reward_amount
+  WHERE id = current_user_id;
 
   INSERT INTO public.daily_rewards (user_id, reward_points, streak_day, claimed_at)
   VALUES (current_user_id, selected_reward_amount, new_streak, claim_time)
@@ -120,6 +132,21 @@ CREATE INDEX IF NOT EXISTS idx_reward_settings_reward_amount ON reward_settings(
 
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS avatar_url TEXT;
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'admin'));
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS lifetime_points INT NOT NULL DEFAULT 0;
+UPDATE profiles SET lifetime_points = points WHERE lifetime_points = 0 AND points > 0;
+
+-- Reward redemption history: the source of truth for Recent Transactions.
+CREATE TABLE IF NOT EXISTS transactions (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  reward_name TEXT NOT NULL,
+  points_spent INT NOT NULL CHECK (points_spent >= 0),
+  transaction_type TEXT NOT NULL DEFAULT 'redemption',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_transactions_user_created_at
+  ON transactions(user_id, created_at DESC);
 
 UPDATE profiles
 SET role = 'admin'
@@ -176,6 +203,7 @@ ALTER TABLE reward_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE promotions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE rewards ENABLE ROW LEVEL SECURITY;
 ALTER TABLE promotion_claims ENABLE ROW LEVEL SECURITY;
+ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Users can view their own daily rewards" ON daily_rewards;
 CREATE POLICY "Users can view their own daily rewards" ON daily_rewards
@@ -246,6 +274,14 @@ CREATE POLICY "Users can view their own promotion claims" ON promotion_claims
 
 DROP POLICY IF EXISTS "Users can insert their own promotion claims" ON promotion_claims;
 CREATE POLICY "Users can insert their own promotion claims" ON promotion_claims
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can view their own transactions" ON transactions;
+CREATE POLICY "Users can view their own transactions" ON transactions
+  FOR SELECT USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can insert their own transactions" ON transactions;
+CREATE POLICY "Users can insert their own transactions" ON transactions
   FOR INSERT WITH CHECK (auth.uid() = user_id);
 
 -- Note: Role escalation is prevented by restricting UPDATE access to role field.

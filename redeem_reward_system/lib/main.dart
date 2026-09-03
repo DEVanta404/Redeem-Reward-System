@@ -6,7 +6,7 @@ import 'screens/home_screen.dart';
 import 'screens/rewards_screen.dart';
 import 'services/supabase_profiles.dart';
 import 'screens/redeem_screen.dart';
-import 'screens/history_screen.dart';
+import 'screens/deals_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/splash_screen.dart';
 
@@ -17,10 +17,7 @@ const supabaseAnonKey =
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Supabase.initialize(
-    url: supabaseUrl,
-    publishableKey: supabaseAnonKey,
-  );
+  await Supabase.initialize(url: supabaseUrl, publishableKey: supabaseAnonKey);
 
   runApp(const RewardApp());
 }
@@ -67,6 +64,7 @@ class _AppFlowState extends State<AppFlow> {
       role: 'user',
     );
     _state.points = 0;
+    _state.lifetimePoints = 0;
     _state.pointsEarnedToday = 0;
     _state.transactions = [];
     _state.rewards = [];
@@ -110,6 +108,8 @@ class _AppFlowState extends State<AppFlow> {
       final phone = profile['phone']?.toString() ?? '';
       final birthday = profile['birthday']?.toString() ?? '';
       final points = int.tryParse(profile['points']?.toString() ?? '0') ?? 0;
+      final lifetimePoints =
+          int.tryParse(profile['lifetime_points']?.toString() ?? '') ?? points;
       final userId = profile['id']?.toString() ?? '';
       final avatarUrl = profile['avatar_url']?.toString() ?? '';
       final role = profile['role']?.toString() ?? 'user';
@@ -120,8 +120,11 @@ class _AppFlowState extends State<AppFlow> {
 
       if (name.isNotEmpty) {
         final service = SupabaseProfilesService();
-        final promotions = await service.getPromotionsWithClaimStatus(activeOnly: true);
+        final promotions = await service.getPromotions(activeOnly: true);
         final rewards = await service.getRewards(activeOnly: true);
+        final transactions = await service.getRecentTransactions(
+          userId: userId,
+        );
 
         setState(() {
           _state.user = _state.user.copyWith(
@@ -135,8 +138,9 @@ class _AppFlowState extends State<AppFlow> {
             role: role,
           );
           _state.points = points;
+          _state.lifetimePoints = lifetimePoints;
           _state.pointsEarnedToday = 0;
-          _state.transactions = [];
+          _state.transactions = transactions;
           _state.promotions = promotions;
           _state.rewards = rewards;
         });
@@ -185,7 +189,11 @@ class MainScaffold extends StatefulWidget {
   final AppState state;
   final VoidCallback onLoggedOut;
 
-  const MainScaffold({super.key, required this.state, required this.onLoggedOut});
+  const MainScaffold({
+    super.key,
+    required this.state,
+    required this.onLoggedOut,
+  });
 
   @override
   State<MainScaffold> createState() => _MainScaffoldState();
@@ -205,7 +213,7 @@ class _MainScaffoldState extends State<MainScaffold> {
       ),
       RewardsScreen(state: widget.state),
       RedeemScreen(state: widget.state, onRedeem: _refresh),
-      HistoryScreen(state: widget.state),
+      DealsScreen(state: widget.state),
       ProfileScreen(
         state: widget.state,
         onProfileUpdated: _refresh,
@@ -238,9 +246,9 @@ class _MainScaffoldState extends State<MainScaffold> {
             label: 'Redeem',
           ),
           NavigationDestination(
-            icon: Icon(Icons.history),
-            selectedIcon: Icon(Icons.history, color: Color(0xFF3E2723)),
-            label: 'History',
+            icon: Icon(Icons.local_offer_outlined),
+            selectedIcon: Icon(Icons.local_offer, color: Color(0xFF3E2723)),
+            label: 'Deals',
           ),
           NavigationDestination(
             icon: Icon(Icons.person_outline),

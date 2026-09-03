@@ -49,12 +49,37 @@ class AppTransaction {
   final DateTime date;
   final int points;
   final String description;
+  final String type;
 
   const AppTransaction({
     required this.date,
     required this.points,
     required this.description,
+    this.type = 'redemption',
   });
+
+  factory AppTransaction.fromMap(Map<String, dynamic> map) {
+    final pointsSpent =
+        int.tryParse(map['points_spent']?.toString() ?? '') ?? 0;
+    final pointsValue =
+        int.tryParse(map['points']?.toString() ?? '') ?? -pointsSpent;
+    final rewardName = map['reward_name']?.toString();
+    return AppTransaction(
+      date:
+          DateTime.tryParse(
+            map['created_at']?.toString() ?? map['timestamp']?.toString() ?? '',
+          )?.toLocal() ??
+          DateTime.now(),
+      points: pointsValue,
+      description:
+          map['description']?.toString() ??
+          (rewardName == null ? 'Redeemed reward' : 'Redeemed $rewardName'),
+      type:
+          map['transaction_type']?.toString() ??
+          map['type']?.toString() ??
+          'redemption',
+    );
+  }
 }
 
 class RewardItem {
@@ -81,16 +106,24 @@ class RewardItem {
   });
 
   factory RewardItem.fromMap(Map<String, dynamic> map) {
-    final iconName = (map['icon_name'] ?? map['icon'] ?? 'local_cafe').toString();
+    final iconName = (map['icon_name'] ?? map['icon'] ?? 'local_cafe')
+        .toString();
     final icon = iconFromName(iconName);
 
     return RewardItem(
       id: map['id']?.toString() ?? '',
       name: map['name']?.toString() ?? 'Reward',
-      pointsCost: int.tryParse(map['points_cost']?.toString() ?? map['pointsCost']?.toString() ?? '0') ?? 0,
+      pointsCost:
+          int.tryParse(
+            map['points_cost']?.toString() ??
+                map['pointsCost']?.toString() ??
+                '0',
+          ) ??
+          0,
       icon: icon,
       description: map['description']?.toString() ?? '',
-      imageUrl: map['image_url']?.toString() ?? map['imageUrl']?.toString() ?? '',
+      imageUrl:
+          map['image_url']?.toString() ?? map['imageUrl']?.toString() ?? '',
       category: map['category']?.toString() ?? 'general',
       isActive: map['is_active'] == true || map['isActive'] == true,
       stock: int.tryParse(map['stock']?.toString() ?? '0') ?? 0,
@@ -185,6 +218,36 @@ class RewardItem {
   }
 }
 
+class DealItem {
+  final String id;
+  final String name;
+  final String description;
+  final String category;
+  final String badge;
+  final IconData icon;
+
+  const DealItem({
+    required this.id,
+    required this.name,
+    required this.description,
+    required this.category,
+    required this.badge,
+    required this.icon,
+  });
+}
+
+class DealOrder {
+  final DealItem deal;
+  final String orderCode;
+  final DateTime orderedAt;
+
+  const DealOrder({
+    required this.deal,
+    required this.orderCode,
+    required this.orderedAt,
+  });
+}
+
 class Promotion {
   final String id;
   final String title;
@@ -198,7 +261,6 @@ class Promotion {
   final bool isActive;
   final DateTime? startDate;
   final DateTime? endDate;
-  final bool claimedByCurrentUser;
 
   static const List<IconData> adminIconOptions = [
     Icons.redeem,
@@ -281,27 +343,35 @@ class Promotion {
     this.isActive = true,
     this.startDate,
     this.endDate,
-    this.claimedByCurrentUser = false,
   });
 
   factory Promotion.fromMap(Map<String, dynamic> map) {
     final iconName = (map['icon_name'] ?? map['icon'] ?? 'redeem').toString();
-    final colorHex = map['color_hex']?.toString() ?? map['color']?.toString() ?? '#2E7D32';
+    final colorHex =
+        map['color_hex']?.toString() ?? map['color']?.toString() ?? '#2E7D32';
 
     return Promotion(
       id: map['id']?.toString() ?? '',
       title: map['title']?.toString() ?? 'Promotion',
-      subtitle: map['subtitle']?.toString() ?? map['description']?.toString() ?? '',
-      validUntil: map['valid_until']?.toString() ?? map['ends_at']?.toString() ?? 'Ongoing',
+      subtitle:
+          map['subtitle']?.toString() ?? map['description']?.toString() ?? '',
+      validUntil:
+          map['valid_until']?.toString() ??
+          map['ends_at']?.toString() ??
+          'Ongoing',
       color: _colorFromHex(colorHex),
       icon: iconFromName(iconName),
       description: map['description']?.toString() ?? '',
-      imageUrl: map['image_url']?.toString() ?? map['imageUrl']?.toString() ?? '',
+      imageUrl:
+          map['image_url']?.toString() ?? map['imageUrl']?.toString() ?? '',
       category: map['category']?.toString() ?? 'general',
       isActive: map['is_active'] == true || map['isActive'] == true,
-      startDate: map['starts_at'] != null ? DateTime.tryParse(map['starts_at'].toString()) : null,
-      endDate: map['ends_at'] != null ? DateTime.tryParse(map['ends_at'].toString()) : null,
-      claimedByCurrentUser: map['claimed_by_current_user'] == true,
+      startDate: map['starts_at'] != null
+          ? DateTime.tryParse(map['starts_at'].toString())
+          : null,
+      endDate: map['ends_at'] != null
+          ? DateTime.tryParse(map['ends_at'].toString())
+          : null,
     );
   }
 
@@ -317,7 +387,8 @@ class Promotion {
     'starts_at': startDate?.toUtc().toIso8601String(),
     'ends_at': endDate?.toUtc().toIso8601String(),
     'icon_name': iconName(icon),
-    'color_hex': '#${color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}',
+    'color_hex':
+        '#${color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}',
   };
 
   static String iconName(IconData icon) {
@@ -506,6 +577,7 @@ class AppState {
   );
 
   int points = 0;
+  int lifetimePoints = 0;
   int pointsEarnedToday = 0;
   List<RewardItem> rewards = const [
     RewardItem(name: 'Free Espresso', pointsCost: 100, icon: Icons.local_cafe),
@@ -514,6 +586,49 @@ class AppState {
     RewardItem(name: 'Free Pastry', pointsCost: 500, icon: Icons.bakery_dining),
     RewardItem(name: 'Free Cold Brew', pointsCost: 700, icon: Icons.local_bar),
   ];
+  final List<DealItem> deals = const [
+    DealItem(
+      id: 'brown-sugar-oat-latte',
+      name: 'Brown Sugar Oat Latte',
+      description: 'Espresso, oat milk, and brown sugar over ice.',
+      category: 'Special Drinks',
+      badge: 'NEW',
+      icon: Icons.local_cafe,
+    ),
+    DealItem(
+      id: 'baristas-choice',
+      name: "Barista's Choice",
+      description: 'A handcrafted surprise selected by today\'s barista.',
+      category: "Barista's Choice",
+      badge: 'TODAY',
+      icon: Icons.auto_awesome,
+    ),
+    DealItem(
+      id: 'seasonal-cold-brew',
+      name: 'Seasonal Cold Brew',
+      description: 'Our limited seasonal flavor, served chilled.',
+      category: 'Seasonal',
+      badge: 'LIMITED',
+      icon: Icons.local_bar,
+    ),
+    DealItem(
+      id: 'coffee-break-bundle',
+      name: 'Coffee Break Bundle',
+      description: 'Two drinks and two pastries for sharing.',
+      category: 'Bundles',
+      badge: 'BUNDLE',
+      icon: Icons.bakery_dining,
+    ),
+    DealItem(
+      id: 'breakfast-pair',
+      name: 'Breakfast Pair',
+      description: 'A fresh pastry paired with your choice of coffee.',
+      category: 'Food',
+      badge: 'FRESH',
+      icon: Icons.free_breakfast,
+    ),
+  ];
+  final List<DealOrder> dealOrders = [];
   List<Promotion> promotions = const [
     Promotion(
       title: 'Buy 1 Get 1',
@@ -553,8 +668,8 @@ class AppState {
   bool get isAdmin => user.isAdmin;
 
   String get membership {
-    if (points >= 1000) return 'Gold';
-    if (points >= 500) return 'Silver';
+    if (lifetimePoints >= 1000) return 'Gold';
+    if (lifetimePoints >= 500) return 'Silver';
     return 'Bronze';
   }
 
@@ -624,21 +739,15 @@ class AppState {
 
   Future<void> redeemReward(RewardItem reward) async {
     points -= reward.pointsCost;
-    transactions.insert(
-      0,
-      AppTransaction(
-        date: DateTime.now(),
-        points: -reward.pointsCost,
-        description: 'Redeemed ${reward.name}',
-      ),
-    );
 
     // Persist updated points to Supabase if we have a user id.
     if (user.id.isNotEmpty) {
       try {
-        await SupabaseProfilesService().updatePoints(
+        await SupabaseProfilesService().persistRedemption(
           userId: user.id,
           points: points,
+          rewardName: reward.name,
+          pointsSpent: reward.pointsCost,
         );
 
         // Optionally re-fetch profile to ensure local state matches DB.
@@ -654,6 +763,15 @@ class AppState {
         debugPrint('Error persisting redeemed points: $e');
       }
     }
+
+    transactions.insert(
+      0,
+      AppTransaction(
+        date: DateTime.now(),
+        points: -reward.pointsCost,
+        description: 'Redeemed ${reward.name}',
+      ),
+    );
   }
 
   void updateProfile(UserProfile updated) {

@@ -24,9 +24,13 @@ class RewardsScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F0E8),
       appBar: AppBar(
-        title: const Text('Rewards',
-            style: TextStyle(
-                fontWeight: FontWeight.bold, color: Color(0xFF3E2723))),
+        title: const Text(
+          'Rewards',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF3E2723),
+          ),
+        ),
         backgroundColor: const Color(0xFFF5F0E8),
         elevation: 0,
         centerTitle: false,
@@ -61,9 +65,10 @@ class RewardsScreen extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('Current Points',
-                            style: TextStyle(
-                                color: Colors.white60, fontSize: 12)),
+                        const Text(
+                          'Current Points',
+                          style: TextStyle(color: Colors.white60, fontSize: 12),
+                        ),
                         const SizedBox(height: 4),
                         Text(
                           '${state.points}',
@@ -77,13 +82,18 @@ class RewardsScreen extends StatelessWidget {
                         const SizedBox(height: 8),
                         Row(
                           children: [
-                            const Icon(Icons.arrow_upward,
-                                color: Color(0xFF80CBC4), size: 14),
+                            const Icon(
+                              Icons.arrow_upward,
+                              color: Color(0xFF80CBC4),
+                              size: 14,
+                            ),
                             const SizedBox(width: 4),
                             Text(
                               '+${state.pointsEarnedToday} Today',
                               style: const TextStyle(
-                                  color: Color(0xFF80CBC4), fontSize: 13),
+                                color: Color(0xFF80CBC4),
+                                fontSize: 13,
+                              ),
                             ),
                           ],
                         ),
@@ -91,19 +101,23 @@ class RewardsScreen extends StatelessWidget {
                     ),
                   ),
                   Container(
-                      width: 1,
-                      height: 80,
-                      color: Colors.white24,
-                      margin:
-                          const EdgeInsets.symmetric(horizontal: 20)),
+                    width: 1,
+                    height: 80,
+                    color: Colors.white24,
+                    margin: const EdgeInsets.symmetric(horizontal: 20),
+                  ),
                   Column(
                     children: [
-                      const Text('Membership',
-                          style: TextStyle(
-                              color: Colors.white60, fontSize: 12)),
+                      const Text(
+                        'Membership',
+                        style: TextStyle(color: Colors.white60, fontSize: 12),
+                      ),
                       const SizedBox(height: 8),
-                      Icon(Icons.workspace_premium,
-                          color: _membershipColor, size: 32),
+                      Icon(
+                        Icons.workspace_premium,
+                        color: _membershipColor,
+                        size: 32,
+                      ),
                       const SizedBox(height: 4),
                       Text(
                         state.membership,
@@ -121,24 +135,27 @@ class RewardsScreen extends StatelessWidget {
             const SizedBox(height: 24),
 
             // ── Membership Tiers ─────────────────────────────────────
-            _MembershipTiers(currentPoints: state.points),
+            _MembershipTiers(lifetimePoints: state.lifetimePoints),
             const SizedBox(height: 24),
 
             // ── Recent Transactions ──────────────────────────────────
             const Text(
               'Recent Transactions',
               style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF3E2723)),
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF3E2723),
+              ),
             ),
             const SizedBox(height: 12),
             if (recent.isEmpty)
               Center(
                 child: Padding(
                   padding: const EdgeInsets.all(24),
-                  child: Text('No transactions yet.',
-                      style: TextStyle(color: Colors.grey[500])),
+                  child: Text(
+                    'No transactions yet.',
+                    style: TextStyle(color: Colors.grey[500]),
+                  ),
                 ),
               )
             else
@@ -160,8 +177,8 @@ class _TierData {
 }
 
 class _MembershipTiers extends StatelessWidget {
-  final int currentPoints;
-  const _MembershipTiers({required this.currentPoints});
+  final int lifetimePoints;
+  const _MembershipTiers({required this.lifetimePoints});
 
   static const _tiers = [
     _TierData('Bronze', 0, Color(0xFF795548)),
@@ -170,8 +187,8 @@ class _MembershipTiers extends StatelessWidget {
   ];
 
   String get _currentTierName {
-    if (currentPoints >= 1000) return 'Gold';
-    if (currentPoints >= 500) return 'Silver';
+    if (lifetimePoints >= 1000) return 'Gold';
+    if (lifetimePoints >= 500) return 'Silver';
     return 'Bronze';
   }
 
@@ -184,23 +201,27 @@ class _MembershipTiers extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 8,
-              offset: const Offset(0, 2))
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Membership Tiers',
-              style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 15,
-                  color: Color(0xFF3E2723))),
+          const Text(
+            'Membership Tiers',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 15,
+              color: Color(0xFF3E2723),
+            ),
+          ),
           const SizedBox(height: 16),
           Row(
             children: _tiers.map((tier) {
-              final isReached = currentPoints >= tier.minPoints;
+              final isReached = lifetimePoints >= tier.minPoints;
               final isCurrent = tier.name == _currentTierName;
               return Expanded(
                 child: Column(
@@ -234,9 +255,10 @@ class _MembershipTiers extends StatelessWidget {
                         color: isCurrent ? tier.color : Colors.grey,
                       ),
                     ),
-                    Text('${tier.minPoints}+ pts',
-                        style: TextStyle(
-                            fontSize: 10, color: Colors.grey[500])),
+                    Text(
+                      '${tier.minPoints}+ pts',
+                      style: TextStyle(fontSize: 10, color: Colors.grey[500]),
+                    ),
                   ],
                 ),
               );
@@ -255,8 +277,18 @@ class _TransactionTile extends StatelessWidget {
   const _TransactionTile({required this.transaction});
 
   static const _months = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
   ];
 
   @override
@@ -274,9 +306,10 @@ class _TransactionTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 6,
-              offset: const Offset(0, 2))
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
         ],
       ),
       child: Row(
@@ -288,9 +321,7 @@ class _TransactionTile extends StatelessWidget {
               borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(
-              isEarned
-                  ? Icons.add_circle_outline
-                  : Icons.remove_circle_outline,
+              isEarned ? Icons.add_circle_outline : Icons.remove_circle_outline,
               color: color,
               size: 20,
             ),
@@ -300,21 +331,28 @@ class _TransactionTile extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(transaction.description,
-                    style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                        color: Color(0xFF3E2723))),
-                Text(dateStr,
-                    style:
-                        TextStyle(fontSize: 12, color: Colors.grey[500])),
+                Text(
+                  transaction.description,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: Color(0xFF3E2723),
+                  ),
+                ),
+                Text(
+                  dateStr,
+                  style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                ),
               ],
             ),
           ),
           Text(
             '${isEarned ? '+' : ''}${transaction.points}',
             style: TextStyle(
-                fontSize: 16, fontWeight: FontWeight.bold, color: color),
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
           ),
         ],
       ),

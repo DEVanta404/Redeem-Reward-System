@@ -55,4 +55,16 @@ void main() {
     expect(payload['icon_name'], 'local_cafe');
     expect(Promotion.fromMap(payload).icon, Icons.local_cafe);
   });
+
+  test('membership remains based on lifetime points after spending', () {
+    final state = AppState()
+      ..lifetimePoints = 500
+      ..points = 200;
+
+    expect(state.membership, 'Silver');
+
+    state.points = 0;
+
+    expect(state.membership, 'Silver');
+  });
 }

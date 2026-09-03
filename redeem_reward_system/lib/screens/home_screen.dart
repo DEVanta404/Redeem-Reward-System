@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../app_state.dart';
 import '../services/daily_rewards_service.dart';
-import '../services/supabase_profiles.dart';
 import 'promotions_screen.dart';
 import 'daily_reward_slot_screen.dart';
 
@@ -170,6 +169,7 @@ class _HomeScreenState extends State<HomeScreen> {
               if (!mounted) return false;
               setState(() {
                 widget.state.points = newPoints;
+                widget.state.lifetimePoints += reward;
                 widget.state.pointsEarnedToday += reward;
               });
               await _loadDailyRewardState();
@@ -216,20 +216,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _refreshPromotions() async {
-    try {
-      final promotions = await SupabaseProfilesService()
-          .getPromotionsWithClaimStatus(activeOnly: true);
-      if (mounted) {
-        setState(() {
-          widget.state.promotions = promotions;
-        });
-      }
-    } catch (error) {
-      debugPrint('Failed to refresh promotions: $error');
-    }
-  }
-
   @override
   void dispose() {
     _countdownTimer.cancel();
@@ -237,20 +223,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   List<Promotion> _getFilteredAndSortedPromotions() {
-    // Filter out expired promotions and sort (unclaimed first, then claimed)
-    final activePromotions = widget.state.promotions
-        .where((p) => !p.isExpired)
-        .toList();
-
-    // Sort: unclaimed first, then claimed
-    activePromotions.sort((a, b) {
-      if (a.claimedByCurrentUser != b.claimedByCurrentUser) {
-        return a.claimedByCurrentUser ? 1 : -1;
-      }
-      return 0;
-    });
-
-    return activePromotions;
+    return widget.state.promotions.where((p) => !p.isExpired).toList();
   }
 
   String get _greeting {
@@ -538,7 +511,7 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(height: 8),
               ..._getFilteredAndSortedPromotions()
                   .take(2)
-                  .map((p) => _PromoCard(promo: p, onClaimed: _refreshPromotions)),
+                  .map((p) => _PromoCard(promo: p)),
             ],
           ),
         ),
@@ -791,8 +764,7 @@ class _QuickCard extends StatelessWidget {
 
 class _PromoCard extends StatefulWidget {
   final Promotion promo;
-  final VoidCallback? onClaimed;
-  const _PromoCard({required this.promo, this.onClaimed});
+  const _PromoCard({required this.promo});
 
   @override
   State<_PromoCard> createState() => _PromoCardState();
@@ -808,10 +780,7 @@ class _PromoCardState extends State<_PromoCard> {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            const Color(0xFF4A342D),
-            const Color(0xFF3A2723),
-          ],
+          colors: [const Color(0xFF4A342D), const Color(0xFF3A2723)],
         ),
         borderRadius: BorderRadius.circular(18),
         boxShadow: [
@@ -850,7 +819,11 @@ class _PromoCardState extends State<_PromoCard> {
                     width: 1,
                   ),
                 ),
-                child: Icon(widget.promo.icon, color: const Color(0xFFD4A574), size: 22),
+                child: Icon(
+                  widget.promo.icon,
+                  color: const Color(0xFFD4A574),
+                  size: 22,
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -872,7 +845,9 @@ class _PromoCardState extends State<_PromoCard> {
                       ),
                       child: Text(
                         widget.promo.category.isNotEmpty
-                            ? widget.promo.category.replaceAll('_', ' ').toUpperCase()
+                            ? widget.promo.category
+                                  .replaceAll('_', ' ')
+                                  .toUpperCase()
                             : 'PROMO',
                         style: const TextStyle(
                           color: Color(0xFFD4A574),

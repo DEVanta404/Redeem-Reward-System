@@ -82,13 +82,11 @@ class SupabaseProfilesService {
 
       if (existing == null) {
         payload['points'] = 0;
+        payload['lifetime_points'] = 0;
         payload.putIfAbsent('phone', () => '');
         await _client.from('profiles').insert(payload);
       } else {
-        final updatePayload = {
-          'email': email,
-          'name': payload['name'],
-        };
+        final updatePayload = {'email': email, 'name': payload['name']};
         if (phone != null) {
           updatePayload['phone'] = phone;
         }
@@ -99,14 +97,16 @@ class SupabaseProfilesService {
           updatePayload['avatar_url'] = avatarUrl;
         }
         debugPrint('Updating profile with payload: $updatePayload');
-        debugPrint('avatarUrl in updatePayload: ${updatePayload['avatar_url']}');
-        
+        debugPrint(
+          'avatarUrl in updatePayload: ${updatePayload['avatar_url']}',
+        );
+
         final updateResult = await _client
             .from('profiles')
             .update(updatePayload)
             .eq('id', userId)
             .select();
-        
+
         debugPrint('Update result: $updateResult');
       }
 
@@ -121,20 +121,68 @@ class SupabaseProfilesService {
     }
   }
 
-  Future<void> updatePoints({required String userId, required int points}) async {
+  Future<void> updatePoints({
+    required String userId,
+    required int points,
+  }) async {
     try {
-      await _client.from('profiles').update({'points': points}).eq('id', userId);
+      await _client
+          .from('profiles')
+          .update({'points': points})
+          .eq('id', userId);
     } catch (error) {
       debugPrint('Failed to update points for $userId: $error');
       rethrow;
     }
   }
 
+  Future<void> persistRedemption({
+    required String userId,
+    required int points,
+    required String rewardName,
+    required int pointsSpent,
+  }) async {
+    await updatePoints(userId: userId, points: points);
+    await _client.from('transactions').insert({
+      'user_id': userId,
+      'reward_name': rewardName,
+      'points_spent': pointsSpent,
+      'transaction_type': 'redemption',
+    });
+  }
+
+  Future<List<AppTransaction>> getRecentTransactions({
+    required String userId,
+    int limit = 10,
+  }) async {
+    try {
+      final response = await _client
+          .from('transactions')
+          .select()
+          .eq('user_id', userId)
+          .order('created_at', ascending: false)
+          .limit(limit);
+      return (response as List<dynamic>)
+          .map((row) => AppTransaction.fromMap(Map<String, dynamic>.from(row)))
+          .toList();
+    } catch (error) {
+      debugPrint('Failed to load transactions: $error');
+      return const [];
+    }
+  }
+
   Future<List<Promotion>> getPromotions({bool activeOnly = false}) async {
     try {
-      final query = _client.from('promotions').select().order('created_at', ascending: false);
+      final query = _client
+          .from('promotions')
+          .select()
+          .order('created_at', ascending: false);
       final response = activeOnly
-          ? await _client.from('promotions').select().eq('is_active', true).order('created_at', ascending: false)
+          ? await _client
+                .from('promotions')
+                .select()
+                .eq('is_active', true)
+                .order('created_at', ascending: false)
           : await query;
       final rows = response as List<dynamic>;
       return rows
@@ -148,9 +196,16 @@ class SupabaseProfilesService {
 
   Future<List<RewardItem>> getRewards({bool activeOnly = false}) async {
     try {
-      final query = _client.from('rewards').select().order('created_at', ascending: false);
+      final query = _client
+          .from('rewards')
+          .select()
+          .order('created_at', ascending: false);
       final response = activeOnly
-          ? await _client.from('rewards').select().eq('is_active', true).order('created_at', ascending: false)
+          ? await _client
+                .from('rewards')
+                .select()
+                .eq('is_active', true)
+                .order('created_at', ascending: false)
           : await query;
       final rows = response as List<dynamic>;
       return rows
@@ -173,7 +228,8 @@ class SupabaseProfilesService {
         'is_active': promotion.isActive,
         'starts_at': promotion.startDate?.toUtc().toIso8601String(),
         'ends_at': promotion.endDate?.toUtc().toIso8601String(),
-        'color_hex': '#${promotion.color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}',
+        'color_hex':
+            '#${promotion.color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2)}',
         'icon_name': Promotion.iconName(promotion.icon),
       };
 
@@ -292,96 +348,4 @@ class SupabaseProfilesService {
       return null;
     }
   }
-
-  /// Claim a promotion for the current user
-  Future<bool> claimPromotion(String promotionId) async {
-    try {
-      final userId = _client.auth.currentUser?.id;
-      if (userId == null) {
-        debugPrint('User not authenticated');
-        return false;
-      }
-
-      await _client.from('promotion_claims').insert({
-        'user_id': userId,
-        'promotion_id': promotionId,
-      });
-
-      debugPrint('Promotion $promotionId claimed successfully');
-      return true;
-    } on PostgrestException catch (error) {
-      // Handle unique constraint violation (already claimed)
-      if (error.code == '23505') {
-        debugPrint('Promotion already claimed by this user');
-        return false;
-      }
-      debugPrint('Failed to claim promotion: $error');
-      return false;
-    } catch (error) {
-      debugPrint('Unexpected error claiming promotion: $error');
-      return false;
-    }
-  }
-
-  /// Get all promotions with claim status for the current user
-  Future<List<Promotion>> getPromotionsWithClaimStatus({bool activeOnly = false}) async {
-    try {
-      final userId = _client.auth.currentUser?.id;
-      if (userId == null) {
-        debugPrint('User not authenticated, fetching promotions without claim status');
-        return getPromotions(activeOnly: activeOnly);
-      }
-
-      // Get promotions with left join to promotion_claims to see which ones current user claimed
-      final String selectColumns = '''
-        id,
-        title,
-        subtitle,
-        description,
-        valid_until,
-        image_url,
-        category,
-        is_active,
-        starts_at,
-        ends_at,
-        color_hex,
-        icon_name,
-        created_at,
-        updated_at,
-        promotion_claims(id, user_id)
-      ''';
-
-      final List<dynamic> response;
-      if (activeOnly) {
-        response = await _client
-            .from('promotions')
-            .select(selectColumns)
-            .eq('is_active', true)
-            .order('created_at', ascending: false);
-      } else {
-        response = await _client
-            .from('promotions')
-            .select(selectColumns)
-            .order('created_at', ascending: false);
-      }
-
-      return response
-          .map((row) {
-            final map = Map<String, dynamic>.from(row);
-            // Check if current user claimed this promotion
-            final claims = map['promotion_claims'] as List<dynamic>?;
-            final claimed = claims != null && claims.any((c) {
-              final claimMap = Map<String, dynamic>.from(c);
-              return claimMap['user_id'] == userId;
-            });
-            map['claimed_by_current_user'] = claimed;
-            return Promotion.fromMap(map);
-          })
-          .toList();
-    } catch (error) {
-      debugPrint('Failed to load promotions with claim status: $error');
-      return const [];
-    }
-  }
 }
-
