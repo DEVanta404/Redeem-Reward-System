@@ -5,6 +5,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../app_state.dart';
 
+typedef DealsLoader = Future<List<DealItem>> Function({bool activeOnly});
+typedef DealsWatcher = Stream<List<DealItem>> Function({bool activeOnly});
+
 class SupabaseProfilesService {
   final SupabaseClient _client = Supabase.instance.client;
 
@@ -59,7 +62,6 @@ class SupabaseProfilesService {
       'id': userId,
       'name': username ?? fullName ?? email.split('@').first,
       'email': email,
-      'role': 'user',
     };
     if (phone != null) {
       payload['phone'] = phone;
@@ -81,8 +83,6 @@ class SupabaseProfilesService {
           .maybeSingle();
 
       if (existing == null) {
-        payload['points'] = 0;
-        payload['lifetime_points'] = 0;
         payload.putIfAbsent('phone', () => '');
         await _client.from('profiles').insert(payload);
       } else {
@@ -293,6 +293,55 @@ class SupabaseProfilesService {
     }
   }
 
+  Future<List<DealItem>> getDeals({bool activeOnly = false}) async {
+    try {
+      final query = _client.from('deals').select().order('created_at');
+      final response = activeOnly
+          ? await _client
+                .from('deals')
+                .select()
+                .eq('is_active', true)
+                .order('created_at')
+          : await query;
+      return (response as List<dynamic>)
+          .map((row) => DealItem.fromMap(Map<String, dynamic>.from(row)))
+          .toList();
+    } catch (error) {
+      debugPrint('Failed to load deals: $error');
+      rethrow;
+    }
+  }
+
+  Stream<List<DealItem>> streamDeals({bool activeOnly = true}) {
+    final stream = _client.from('deals').stream(primaryKey: ['id']);
+    final visible = activeOnly
+        ? stream.eq('is_active', true)
+        : stream;
+    return visible.map(
+      (rows) => rows
+          .map((row) => DealItem.fromMap(Map<String, dynamic>.from(row)))
+          .toList(),
+    );
+  }
+
+  Future<void> upsertDeal(DealItem deal) async {
+    try {
+      await _client.from('deals').upsert(deal.toMap());
+    } catch (error) {
+      debugPrint('Failed to save deal: $error');
+      rethrow;
+    }
+  }
+
+  Future<void> deleteDeal(String id) async {
+    try {
+      await _client.from('deals').delete().eq('id', id);
+    } catch (error) {
+      debugPrint('Failed to delete deal: $error');
+      rethrow;
+    }
+  }
+
   /// Optional: subscribe to realtime updates for a profile's row.
   Stream<List<Map<String, dynamic>>> streamProfile(String userId) {
     return _client
@@ -345,7 +394,7 @@ class SupabaseProfilesService {
       return response;
     } catch (error) {
       debugPrint('Profile fetch failed: $error');
-      return null;
+      rethrow;
     }
   }
 }

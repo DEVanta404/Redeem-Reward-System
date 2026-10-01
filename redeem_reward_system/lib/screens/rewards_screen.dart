@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../app_state.dart';
+import 'promo_section.dart';
 
 class RewardsScreen extends StatelessWidget {
   final AppState state;
@@ -137,6 +138,9 @@ class RewardsScreen extends StatelessWidget {
             // ── Membership Tiers ─────────────────────────────────────
             _MembershipTiers(lifetimePoints: state.lifetimePoints),
             const SizedBox(height: 24),
+
+            PromoSection(promotions: state.promotions),
+            const SizedBox(height: 12),
 
             // ── Recent Transactions ──────────────────────────────────
             const Text(

@@ -1,15 +1,43 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../app_state.dart';
+import '../services/currency_formatter.dart';
+import '../services/order_history_service.dart';
+import '../services/sales_service.dart';
 import '../services/supabase_profiles.dart';
+import 'admin_orders_section.dart';
+import 'admin_sales_section.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   final AppState state;
   final VoidCallback? onAdminChanged;
+  final Future<void> Function() onLoggedOut;
+  final VoidCallback onUnauthorized;
+  final Future<SalesReport> Function(SalesPeriod period)? loadSalesReport;
+  final Future<List<OrderHistoryEntry>> Function({
+    required String status,
+    required int offset,
+    String search,
+    int limit,
+  })?
+  loadAdminOrders;
+  final Future<Map<String, dynamic>> Function({
+    required String orderId,
+    required String newStatus,
+  })?
+  updateAdminOrderStatus;
+  final Future<OrderPointsRate> Function()? loadOrderPointsRate;
 
   const AdminDashboardScreen({
     super.key,
     required this.state,
+    required this.onLoggedOut,
+    required this.onUnauthorized,
     this.onAdminChanged,
+    this.loadSalesReport,
+    this.loadAdminOrders,
+    this.updateAdminOrderStatus,
+    this.loadOrderPointsRate,
   });
 
   @override
@@ -24,23 +52,51 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   List<DealItem> _deals = [];
   String _dealSearch = '';
   String _dealCategoryFilter = 'All';
+  String _selectedSection = 'All';
+  bool _redirecting = false;
+  final GlobalKey<AdminSalesSectionState> _salesSectionKey =
+      GlobalKey<AdminSalesSectionState>();
+  final GlobalKey<AdminOrdersSectionState> _ordersSectionKey =
+      GlobalKey<AdminOrdersSectionState>();
+
+  static const _sections = [
+    'All',
+    'Promotions',
+    'Rewards',
+    'Deals',
+    'Orders',
+    'Sales',
+  ];
 
   @override
   void initState() {
     super.initState();
-    _loadData();
+    if (widget.state.user.isAdmin) {
+      _loadData();
+    } else {
+      _redirecting = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) widget.onUnauthorized();
+      });
+    }
   }
 
   Future<void> _loadData() async {
     try {
       final promotions = await _service.getPromotions();
       final rewards = await _service.getRewards();
+      final deals = await _service.getDeals();
       if (!mounted) return;
 
       setState(() {
-        _promotions = promotions.isNotEmpty ? promotions : List<Promotion>.from(widget.state.promotions);
-        _rewards = rewards.isNotEmpty ? rewards : List<RewardItem>.from(widget.state.rewards);
-        _deals = List<DealItem>.from(widget.state.deals);
+        _promotions = promotions.isNotEmpty
+            ? promotions
+            : List<Promotion>.from(widget.state.promotions);
+        _rewards = rewards.isNotEmpty
+            ? rewards
+            : List<RewardItem>.from(widget.state.rewards);
+        _deals = deals;
+        widget.state.deals = List<DealItem>.from(_deals);
         widget.state.promotions = _promotions.where((p) => p.isActive).toList();
         widget.state.rewards = _rewards.where((r) => r.isActive).toList();
         _loading = false;
@@ -61,18 +117,25 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     }
   }
 
+  Future<void> _refreshDashboard() async {
+    await _loadData();
+    await _ordersSectionKey.currentState?.refresh();
+    await _salesSectionKey.currentState?.refresh();
+  }
+
   int get _activePromotionsCount => _promotions.where((p) => p.isActive).length;
   int get _activeDealsCount => _deals.where((d) => d.isActive).length;
 
   List<DealItem> get _filteredDeals {
     final query = _dealSearch.trim().toLowerCase();
     final deals = _deals.where((deal) {
-      final matchesQuery = query.isEmpty ||
+      final matchesQuery =
+          query.isEmpty ||
           deal.name.toLowerCase().contains(query) ||
           deal.description.toLowerCase().contains(query) ||
           deal.category.toLowerCase().contains(query);
-      final matchesCategory = _dealCategoryFilter == 'All' ||
-          deal.category == _dealCategoryFilter;
+      final matchesCategory =
+          _dealCategoryFilter == 'All' || deal.category == _dealCategoryFilter;
       return matchesQuery && matchesCategory;
     }).toList();
 
@@ -124,15 +187,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     widget.onAdminChanged?.call();
   }
 
-  void _toggleDeal(DealItem deal) {
-    setState(() {
-      final index = _deals.indexWhere((item) => item.id == deal.id);
-      if (index >= 0) {
-        _deals[index] = _deals[index].copyWith(isActive: !_deals[index].isActive);
-      }
-      widget.state.deals = List<DealItem>.from(_deals);
-    });
-    widget.onAdminChanged?.call();
+  Future<void> _toggleDeal(DealItem deal) async {
+    try {
+      await _service.upsertDeal(deal.copyWith(isActive: !deal.isActive));
+      await _loadData();
+      widget.onAdminChanged?.call();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to update deal: $error')));
+    }
   }
 
   Future<void> _deletePromotion(String id) async {
@@ -140,7 +205,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete promotion?'),
-        content: const Text('This action cannot be undone. Do you really want to delete this promotion?'),
+        content: const Text(
+          'This action cannot be undone. Do you really want to delete this promotion?',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -167,7 +234,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete reward?'),
-        content: const Text('This action cannot be undone. Do you really want to delete this reward?'),
+        content: const Text(
+          'This action cannot be undone. Do you really want to delete this reward?',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -194,7 +263,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete deal?'),
-        content: const Text('This action cannot be undone. Do you really want to remove this deal?'),
+        content: const Text(
+          'This action cannot be undone. Do you really want to remove this deal?',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -211,19 +282,36 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
     if (confirmed != true) return;
 
-    setState(() {
-      _deals.removeWhere((item) => item.id == deal.id);
-      widget.state.deals = List<DealItem>.from(_deals);
-    });
-    widget.onAdminChanged?.call();
+    try {
+      await _service.deleteDeal(deal.id);
+      if (!mounted) return;
+      setState(() {
+        _deals.removeWhere((item) => item.id == deal.id);
+        widget.state.deals = List<DealItem>.from(_deals);
+      });
+      widget.onAdminChanged?.call();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to delete deal: $error')));
+    }
   }
 
   Future<void> _openPromotionEditor([Promotion? existing]) async {
     final titleController = TextEditingController(text: existing?.title ?? '');
-    final subtitleController = TextEditingController(text: existing?.subtitle ?? '');
-    final validUntilController = TextEditingController(text: existing?.validUntil ?? '');
-    final descriptionController = TextEditingController(text: existing?.description ?? '');
-    final categoryController = TextEditingController(text: existing?.category ?? 'general');
+    final subtitleController = TextEditingController(
+      text: existing?.subtitle ?? '',
+    );
+    final validUntilController = TextEditingController(
+      text: existing?.validUntil ?? '',
+    );
+    final descriptionController = TextEditingController(
+      text: existing?.description ?? '',
+    );
+    final categoryController = TextEditingController(
+      text: existing?.category ?? 'general',
+    );
     String categoryValue = existing?.category ?? 'general';
     bool isActive = existing?.isActive ?? true;
     IconData selectedIcon = existing?.icon ?? Promotion.adminIconOptions.first;
@@ -234,7 +322,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
-              title: Text(existing == null ? 'Add promotion' : 'Edit promotion'),
+              title: Text(
+                existing == null ? 'Add promotion' : 'Edit promotion',
+              ),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -264,7 +354,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                               lastDate: DateTime(2100),
                             );
                             if (picked != null) {
-                              validUntilController.text = Promotion.formatDateForDisplay(picked);
+                              validUntilController.text =
+                                  Promotion.formatDateForDisplay(picked);
                             }
                           },
                           icon: const Icon(Icons.calendar_today_outlined),
@@ -300,11 +391,23 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       initialValue: categoryValue,
                       decoration: const InputDecoration(labelText: 'Category'),
                       items: const [
-                        DropdownMenuItem(value: 'today_drink', child: Text("Today's Drink")),
+                        DropdownMenuItem(
+                          value: 'today_drink',
+                          child: Text("Today's Drink"),
+                        ),
                         DropdownMenuItem(value: 'event', child: Text('Event')),
-                        DropdownMenuItem(value: 'special_offer', child: Text('Special Offer')),
-                        DropdownMenuItem(value: 'announcement', child: Text('Announcement')),
-                        DropdownMenuItem(value: 'general', child: Text('General')),
+                        DropdownMenuItem(
+                          value: 'special_offer',
+                          child: Text('Special Offer'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'announcement',
+                          child: Text('Announcement'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'general',
+                          child: Text('General'),
+                        ),
                       ],
                       onChanged: (value) {
                         if (value != null) {
@@ -317,13 +420,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     TextField(
                       controller: descriptionController,
                       maxLines: 3,
-                      decoration: const InputDecoration(labelText: 'Description'),
+                      decoration: const InputDecoration(
+                        labelText: 'Description',
+                      ),
                     ),
                     const SizedBox(height: 12),
                     SwitchListTile(
                       value: isActive,
                       title: const Text('Active'),
-                      onChanged: (value) => setDialogState(() => isActive = value),
+                      onChanged: (value) =>
+                          setDialogState(() => isActive = value),
                     ),
                   ],
                 ),
@@ -346,19 +452,25 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
     if (result != true) return;
 
-    final parsedDate = Promotion.parseDateInput(validUntilController.text.trim());
+    final parsedDate = Promotion.parseDateInput(
+      validUntilController.text.trim(),
+    );
     final promotion = Promotion(
       id: existing?.id ?? '',
       title: titleController.text.trim(),
       subtitle: subtitleController.text.trim(),
       validUntil: parsedDate == null
-          ? (validUntilController.text.trim().isEmpty ? 'Ongoing' : validUntilController.text.trim())
+          ? (validUntilController.text.trim().isEmpty
+                ? 'Ongoing'
+                : validUntilController.text.trim())
           : Promotion.formatDateForDisplay(parsedDate),
       color: existing?.color ?? const Color(0xFF2E7D32),
       icon: selectedIcon,
       description: descriptionController.text.trim(),
       imageUrl: '',
-      category: categoryController.text.trim().isEmpty ? 'general' : categoryController.text.trim(),
+      category: categoryController.text.trim().isEmpty
+          ? 'general'
+          : categoryController.text.trim(),
       isActive: isActive,
       startDate: existing?.startDate,
       endDate: existing?.endDate,
@@ -371,7 +483,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(existing == null ? 'Promotion added!' : 'Promotion updated!'),
+          content: Text(
+            existing == null ? 'Promotion added!' : 'Promotion updated!',
+          ),
           backgroundColor: Colors.green,
         ),
       );
@@ -389,13 +503,22 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   Future<void> _openRewardEditor([RewardItem? existing]) async {
     final nameController = TextEditingController(text: existing?.name ?? '');
-    final descriptionController = TextEditingController(text: existing?.description ?? '');
-    final pointsController = TextEditingController(text: existing?.pointsCost.toString() ?? '100');
-    final stockController = TextEditingController(text: existing?.stock.toString() ?? '0');
-    final categoryController = TextEditingController(text: existing?.category ?? 'general');
+    final descriptionController = TextEditingController(
+      text: existing?.description ?? '',
+    );
+    final pointsController = TextEditingController(
+      text: existing?.pointsCost.toString() ?? '100',
+    );
+    final stockController = TextEditingController(
+      text: existing?.stock.toString() ?? '0',
+    );
+    final categoryController = TextEditingController(
+      text: existing?.category ?? 'general',
+    );
     String categoryValue = existing?.category ?? 'general';
     bool isActive = existing?.isActive ?? true;
-    IconData selectedIcon = existing?.icon ?? RewardItem(name: 'Reward', pointsCost: 100).icon;
+    IconData selectedIcon =
+        existing?.icon ?? RewardItem(name: 'Reward', pointsCost: 100).icon;
 
     final result = await showDialog<bool>(
       context: context,
@@ -410,19 +533,25 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   children: [
                     TextField(
                       controller: nameController,
-                      decoration: const InputDecoration(labelText: 'Reward name'),
+                      decoration: const InputDecoration(
+                        labelText: 'Reward name',
+                      ),
                     ),
                     const SizedBox(height: 12),
                     TextField(
                       controller: descriptionController,
                       maxLines: 3,
-                      decoration: const InputDecoration(labelText: 'Description'),
+                      decoration: const InputDecoration(
+                        labelText: 'Description',
+                      ),
                     ),
                     const SizedBox(height: 12),
                     TextField(
                       controller: pointsController,
                       keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(labelText: 'Points cost'),
+                      decoration: const InputDecoration(
+                        labelText: 'Points cost',
+                      ),
                     ),
                     const SizedBox(height: 12),
                     TextField(
@@ -434,37 +563,38 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     DropdownButtonFormField<IconData>(
                       initialValue: selectedIcon,
                       decoration: const InputDecoration(labelText: 'Icon'),
-                      items: [
-                        Icons.local_cafe,
-                        Icons.coffee,
-                        Icons.local_offer,
-                        Icons.bakery_dining,
-                        Icons.local_bar,
-                        Icons.stars,
-                        Icons.redeem,
-                      ].map(
-                        (icon) => DropdownMenuItem<IconData>(
-                          value: icon,
-                          child: Row(
-                            children: [
-                              Icon(icon),
-                              const SizedBox(width: 8),
-                              Text(
-                                switch (icon) {
-                                  Icons.local_cafe => 'Coffee',
-                                  Icons.coffee => 'Espresso',
-                                  Icons.local_offer => 'Gift',
-                                  Icons.bakery_dining => 'Pastry',
-                                  Icons.local_bar => 'Drink',
-                                  Icons.stars => 'Premium',
-                                  Icons.redeem => 'Voucher',
-                                  _ => 'Special',
-                                },
-                              ),
-                            ],
-                          ),
-                        ),
-                      ).toList(),
+                      items:
+                          [
+                                Icons.local_cafe,
+                                Icons.coffee,
+                                Icons.local_offer,
+                                Icons.bakery_dining,
+                                Icons.local_bar,
+                                Icons.stars,
+                                Icons.redeem,
+                              ]
+                              .map(
+                                (icon) => DropdownMenuItem<IconData>(
+                                  value: icon,
+                                  child: Row(
+                                    children: [
+                                      Icon(icon),
+                                      const SizedBox(width: 8),
+                                      Text(switch (icon) {
+                                        Icons.local_cafe => 'Coffee',
+                                        Icons.coffee => 'Espresso',
+                                        Icons.local_offer => 'Gift',
+                                        Icons.bakery_dining => 'Pastry',
+                                        Icons.local_bar => 'Drink',
+                                        Icons.stars => 'Premium',
+                                        Icons.redeem => 'Voucher',
+                                        _ => 'Special',
+                                      }),
+                                    ],
+                                  ),
+                                ),
+                              )
+                              .toList(),
                       onChanged: (value) {
                         if (value != null) {
                           setDialogState(() => selectedIcon = value);
@@ -476,11 +606,23 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       initialValue: categoryValue,
                       decoration: const InputDecoration(labelText: 'Category'),
                       items: const [
-                        DropdownMenuItem(value: 'coffee', child: Text('Coffee')),
-                        DropdownMenuItem(value: 'merchandise', child: Text('Merchandise')),
+                        DropdownMenuItem(
+                          value: 'coffee',
+                          child: Text('Coffee'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'merchandise',
+                          child: Text('Merchandise'),
+                        ),
                         DropdownMenuItem(value: 'food', child: Text('Food')),
-                        DropdownMenuItem(value: 'discount', child: Text('Discount')),
-                        DropdownMenuItem(value: 'general', child: Text('General')),
+                        DropdownMenuItem(
+                          value: 'discount',
+                          child: Text('Discount'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'general',
+                          child: Text('General'),
+                        ),
                       ],
                       onChanged: (value) {
                         if (value != null) {
@@ -493,7 +635,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     SwitchListTile(
                       value: isActive,
                       title: const Text('Available'),
-                      onChanged: (value) => setDialogState(() => isActive = value),
+                      onChanged: (value) =>
+                          setDialogState(() => isActive = value),
                     ),
                   ],
                 ),
@@ -522,7 +665,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       description: descriptionController.text.trim(),
       pointsCost: int.tryParse(pointsController.text.trim()) ?? 100,
       imageUrl: '',
-      category: categoryController.text.trim().isEmpty ? 'general' : categoryController.text.trim(),
+      category: categoryController.text.trim().isEmpty
+          ? 'general'
+          : categoryController.text.trim(),
       isActive: isActive,
       stock: int.tryParse(stockController.text.trim()) ?? 0,
       icon: selectedIcon,
@@ -553,9 +698,19 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   Future<void> _openDealEditor([DealItem? existing]) async {
     final nameController = TextEditingController(text: existing?.name ?? '');
-    final descriptionController = TextEditingController(text: existing?.description ?? '');
-    final categoryController = TextEditingController(text: existing?.category ?? 'Seasonal');
-    final badgeController = TextEditingController(text: existing?.badge ?? 'NEW');
+    final descriptionController = TextEditingController(
+      text: existing?.description ?? '',
+    );
+    final categoryController = TextEditingController(
+      text: existing?.category ?? 'Seasonal',
+    );
+    final priceController = TextEditingController(
+      text: (existing?.price ?? 0).toStringAsFixed(2),
+    );
+    final badgeController = TextEditingController(
+      text: existing?.badge ?? 'NEW',
+    );
+    String? priceError;
     bool isActive = existing?.isActive ?? true;
     IconData selectedIcon = existing?.icon ?? Icons.local_cafe;
 
@@ -578,12 +733,36 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     TextField(
                       controller: descriptionController,
                       maxLines: 3,
-                      decoration: const InputDecoration(labelText: 'Description'),
+                      decoration: const InputDecoration(
+                        labelText: 'Description',
+                      ),
                     ),
                     const SizedBox(height: 12),
                     TextField(
                       controller: categoryController,
                       decoration: const InputDecoration(labelText: 'Category'),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: priceController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(
+                          RegExp(r'^\d*\.?\d{0,2}$'),
+                        ),
+                      ],
+                      decoration: InputDecoration(
+                        labelText: 'Price',
+                        prefixText: '$pesoSymbol ',
+                        errorText: priceError,
+                      ),
+                      onChanged: (_) {
+                        if (priceError != null) {
+                          setDialogState(() => priceError = null);
+                        }
+                      },
                     ),
                     const SizedBox(height: 12),
                     TextField(
@@ -595,12 +774,30 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                       initialValue: selectedIcon,
                       decoration: const InputDecoration(labelText: 'Icon'),
                       items: const [
-                        DropdownMenuItem(value: Icons.local_cafe, child: Text('Coffee')),
-                        DropdownMenuItem(value: Icons.local_bar, child: Text('Cold Brew')),
-                        DropdownMenuItem(value: Icons.bakery_dining, child: Text('Bakery')),
-                        DropdownMenuItem(value: Icons.cake, child: Text('Dessert')),
-                        DropdownMenuItem(value: Icons.free_breakfast, child: Text('Breakfast')),
-                        DropdownMenuItem(value: Icons.auto_awesome, child: Text('Featured')),
+                        DropdownMenuItem(
+                          value: Icons.local_cafe,
+                          child: Text('Coffee'),
+                        ),
+                        DropdownMenuItem(
+                          value: Icons.local_bar,
+                          child: Text('Cold Brew'),
+                        ),
+                        DropdownMenuItem(
+                          value: Icons.bakery_dining,
+                          child: Text('Bakery'),
+                        ),
+                        DropdownMenuItem(
+                          value: Icons.cake,
+                          child: Text('Dessert'),
+                        ),
+                        DropdownMenuItem(
+                          value: Icons.free_breakfast,
+                          child: Text('Breakfast'),
+                        ),
+                        DropdownMenuItem(
+                          value: Icons.auto_awesome,
+                          child: Text('Featured'),
+                        ),
                       ],
                       onChanged: (value) {
                         if (value != null) {
@@ -612,7 +809,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     SwitchListTile(
                       value: isActive,
                       title: const Text('Active'),
-                      onChanged: (value) => setDialogState(() => isActive = value),
+                      onChanged: (value) =>
+                          setDialogState(() => isActive = value),
                     ),
                   ],
                 ),
@@ -623,7 +821,22 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   child: const Text('Cancel'),
                 ),
                 ElevatedButton(
-                  onPressed: () => Navigator.pop(context, true),
+                  onPressed: () {
+                    final rawPrice = priceController.text.trim();
+                    final price = double.tryParse(rawPrice);
+                    final valid =
+                        RegExp(r'^\d+(\.\d{1,2})?$').hasMatch(rawPrice) &&
+                        price != null &&
+                        price <= 1000000;
+                    if (!valid) {
+                      setDialogState(
+                        () => priceError =
+                            'Enter a price from 0 to 1,000,000 with up to 2 decimals.',
+                      );
+                      return;
+                    }
+                    Navigator.pop(context, true);
+                  },
                   child: const Text('Save'),
                 ),
               ],
@@ -639,11 +852,26 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       id: existing?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
       name: nameController.text.trim(),
       description: descriptionController.text.trim(),
-      category: categoryController.text.trim().isEmpty ? 'General' : categoryController.text.trim(),
-      badge: badgeController.text.trim().isEmpty ? 'NEW' : badgeController.text.trim(),
+      category: categoryController.text.trim().isEmpty
+          ? 'General'
+          : categoryController.text.trim(),
+      badge: badgeController.text.trim().isEmpty
+          ? 'NEW'
+          : badgeController.text.trim(),
       icon: selectedIcon,
       isActive: isActive,
+      price: double.parse(priceController.text.trim()),
     );
+
+    try {
+      await _service.upsertDeal(deal);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to save deal: $error')));
+      return;
+    }
 
     setState(() {
       final index = _deals.indexWhere((item) => item.id == existing?.id);
@@ -667,189 +895,341 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   @override
   Widget build(BuildContext context) {
     if (!widget.state.user.isAdmin) {
-      return const Scaffold(body: Center(child: Text('Access denied')));
+      if (!_redirecting) {
+        _redirecting = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) widget.onUnauthorized();
+        });
+      }
+      return const Scaffold(
+        backgroundColor: Color(0xFFF5F0E8),
+        body: Center(
+          child: CircularProgressIndicator(color: Color(0xFF3E2723)),
+        ),
+      );
     }
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F0E8),
       appBar: AppBar(
-        title: const Text('Admin Dashboard'),
+        automaticallyImplyLeading: false,
+        title: const Text(
+          'Admin Dashboard',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF3E2723),
+          ),
+        ),
         backgroundColor: const Color(0xFFF5F0E8),
         elevation: 0,
+        actions: [
+          IconButton(
+            tooltip: 'Log out',
+            onPressed: _confirmLogout,
+            icon: const Icon(Icons.logout, color: Color(0xFF3E2723)),
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Overview',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF3E2723),
+          : RefreshIndicator(
+              onRefresh: _refreshDashboard,
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Overview',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF3E2723),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      final cardWidth = (constraints.maxWidth - 12) / 2;
-                      final cardHeight = (cardWidth * 0.72).clamp(128.0, 150.0);
-                      return GridView.count(
-                        crossAxisCount: 2,
-                        mainAxisSpacing: 12,
-                        crossAxisSpacing: 12,
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        mainAxisExtent: cardHeight,
-                        children: [
-                      _OverviewCard(
-                        label: 'Total Promotions',
-                        value: _promotions.length.toString(),
-                        color: const Color(0xFF7B4B3A),
-                        icon: Icons.local_offer_outlined,
+                    const SizedBox(height: 12),
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        final cardWidth = (constraints.maxWidth - 12) / 2;
+                        final cardHeight = (cardWidth * 0.72).clamp(
+                          128.0,
+                          150.0,
+                        );
+                        return GridView.count(
+                          crossAxisCount: 2,
+                          mainAxisSpacing: 12,
+                          crossAxisSpacing: 12,
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          mainAxisExtent: cardHeight,
+                          children: [
+                            _OverviewCard(
+                              label: 'Total Promotions',
+                              value: _promotions.length.toString(),
+                              color: const Color(0xFF7B4B3A),
+                              icon: Icons.local_offer_outlined,
+                            ),
+                            _OverviewCard(
+                              label: 'Active Promotions',
+                              value: _activePromotionsCount.toString(),
+                              color: const Color(0xFF2E7D32),
+                              icon: Icons.check_circle_outline,
+                            ),
+                            _OverviewCard(
+                              label: 'Total Rewards',
+                              value: _rewards.length.toString(),
+                              color: const Color(0xFF9A6B32),
+                              icon: Icons.redeem_outlined,
+                            ),
+                            _OverviewCard(
+                              label: 'Active Deals',
+                              value: _activeDealsCount.toString(),
+                              color: const Color(0xFF5D4037),
+                              icon: Icons.sell_outlined,
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      height: 40,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: _sections.length,
+                        separatorBuilder: (_, index) =>
+                            const SizedBox(width: 8),
+                        itemBuilder: (context, index) {
+                          final section = _sections[index];
+                          final selected = section == _selectedSection;
+                          return ChoiceChip(
+                            label: Text(section),
+                            selected: selected,
+                            onSelected: (_) =>
+                                setState(() => _selectedSection = section),
+                            selectedColor: const Color(0xFF3E2723),
+                            backgroundColor: Colors.white,
+                            side: BorderSide(
+                              color: selected
+                                  ? const Color(0xFF3E2723)
+                                  : const Color(0xFFE2D8CC),
+                            ),
+                            labelStyle: TextStyle(
+                              color: selected
+                                  ? Colors.white
+                                  : const Color(0xFF5D4037),
+                              fontWeight: FontWeight.w600,
+                              fontSize: 12,
+                            ),
+                            showCheckmark: false,
+                          );
+                        },
                       ),
-                      _OverviewCard(
-                        label: 'Active Promotions',
-                        value: _activePromotionsCount.toString(),
-                        color: const Color(0xFF2E7D32),
-                        icon: Icons.check_circle_outline,
-                      ),
-                      _OverviewCard(
-                        label: 'Total Rewards',
-                        value: _rewards.length.toString(),
-                        color: const Color(0xFF9A6B32),
-                        icon: Icons.redeem_outlined,
-                      ),
-                      _OverviewCard(
-                        label: 'Active Deals',
-                        value: _activeDealsCount.toString(),
-                        color: const Color(0xFF5D4037),
-                        icon: Icons.sell_outlined,
-                      ),
-                        ],
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 28),
-                  _ManagementSection(
-                    title: 'Promotions',
-                    onAdd: () => _openPromotionEditor(),
-                    child: _promotions.isEmpty
-                        ? const _EmptyState(label: 'No promotions yet')
-                        : Column(
-                            children: _promotions
-                                .map(
-                                  (promotion) => _PromotionTile(
-                                    promotion: promotion,
-                                    onToggle: () => _togglePromotion(promotion),
-                                    onEdit: () => _openPromotionEditor(promotion),
-                                    onDelete: () => _deletePromotion(promotion.id),
-                                  ),
-                                )
-                                .toList(),
-                          ),
-                  ),
-                  const SizedBox(height: 20),
-                  _ManagementSection(
-                    title: 'Rewards',
-                    onAdd: () => _openRewardEditor(),
-                    child: _rewards.isEmpty
-                        ? const _EmptyState(label: 'No rewards yet')
-                        : Column(
-                            children: _rewards
-                                .map(
-                                  (reward) => _RewardTile(
-                                    reward: reward,
-                                    onToggle: () => _toggleReward(reward),
-                                    onEdit: () => _openRewardEditor(reward),
-                                    onDelete: () => _deleteReward(reward.id),
-                                  ),
-                                )
-                                .toList(),
-                          ),
-                  ),
-                  const SizedBox(height: 20),
-                  _ManagementSection(
-                    title: 'Deals',
-                    onAdd: () => _openDealEditor(),
-                    child: Column(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF8F1E6),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.search, size: 18, color: Color(0xFF7B4B3A)),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: TextField(
-                                  decoration: const InputDecoration(
-                                    hintText: 'Search deals',
-                                    border: InputBorder.none,
-                                    isDense: true,
-                                    contentPadding: EdgeInsets.zero,
-                                  ),
-                                  onChanged: (value) => setState(() => _dealSearch = value),
-                                ),
+                    ),
+                    const SizedBox(height: 16),
+                    if (_selectedSection == 'All' ||
+                        _selectedSection == 'Promotions')
+                      _ManagementSection(
+                        title: 'Promotions',
+                        onAdd: () => _openPromotionEditor(),
+                        child: _promotions.isEmpty
+                            ? const _EmptyState(label: 'No promotions yet')
+                            : Column(
+                                children: _promotions
+                                    .map(
+                                      (promotion) => _PromotionTile(
+                                        promotion: promotion,
+                                        onToggle: () =>
+                                            _togglePromotion(promotion),
+                                        onEdit: () =>
+                                            _openPromotionEditor(promotion),
+                                        onDelete: () =>
+                                            _deletePromotion(promotion.id),
+                                      ),
+                                    )
+                                    .toList(),
                               ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          height: 38,
-                          child: ListView.separated(
-                            scrollDirection: Axis.horizontal,
-                            itemCount: _dealCategories.length,
-                            separatorBuilder: (_, _) => const SizedBox(width: 8),
-                            itemBuilder: (context, index) {
-                              final category = _dealCategories[index];
-                              final selected = category == _dealCategoryFilter;
-                              return ChoiceChip(
-                                label: Text(category),
-                                selected: selected,
-                                onSelected: (_) => setState(() => _dealCategoryFilter = category),
-                                selectedColor: const Color(0xFF3E2723),
-                                backgroundColor: Colors.white,
-                                showCheckmark: false,
-                                labelStyle: TextStyle(
-                                  color: selected ? Colors.white : const Color(0xFF5D4037),
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 12,
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        if (_filteredDeals.isEmpty)
-                          const _EmptyState(label: 'No deals match this filter')
-                        else
-                          Column(
-                            children: _filteredDeals
-                                .map(
-                                  (deal) => _DealTile(
-                                    deal: deal,
-                                    onToggle: () => _toggleDeal(deal),
-                                    onEdit: () => _openDealEditor(deal),
-                                    onDelete: () => _deleteDeal(deal),
+                      ),
+                    if (_selectedSection == 'All') const SizedBox(height: 20),
+                    if (_selectedSection == 'All' ||
+                        _selectedSection == 'Rewards')
+                      _ManagementSection(
+                        title: 'Rewards',
+                        onAdd: () => _openRewardEditor(),
+                        child: _rewards.isEmpty
+                            ? const _EmptyState(label: 'No rewards yet')
+                            : Column(
+                                children: _rewards
+                                    .map(
+                                      (reward) => _RewardTile(
+                                        reward: reward,
+                                        onToggle: () => _toggleReward(reward),
+                                        onEdit: () => _openRewardEditor(reward),
+                                        onDelete: () =>
+                                            _deleteReward(reward.id),
+                                      ),
+                                    )
+                                    .toList(),
+                              ),
+                      ),
+                    if (_selectedSection == 'All') const SizedBox(height: 20),
+                    if (_selectedSection == 'All' ||
+                        _selectedSection == 'Deals')
+                      _ManagementSection(
+                        title: 'Deals',
+                        onAdd: () => _openDealEditor(),
+                        child: Column(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF8F1E6),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.search,
+                                    size: 18,
+                                    color: Color(0xFF7B4B3A),
                                   ),
-                                )
-                                .toList(),
-                          ),
-                      ],
-                    ),
-                  ),
-                ],
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: TextField(
+                                      decoration: const InputDecoration(
+                                        hintText: 'Search deals',
+                                        border: InputBorder.none,
+                                        isDense: true,
+                                        contentPadding: EdgeInsets.zero,
+                                      ),
+                                      onChanged: (value) =>
+                                          setState(() => _dealSearch = value),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              height: 38,
+                              child: ListView.separated(
+                                scrollDirection: Axis.horizontal,
+                                itemCount: _dealCategories.length,
+                                separatorBuilder: (_, _) =>
+                                    const SizedBox(width: 8),
+                                itemBuilder: (context, index) {
+                                  final category = _dealCategories[index];
+                                  final selected =
+                                      category == _dealCategoryFilter;
+                                  return ChoiceChip(
+                                    label: Text(category),
+                                    selected: selected,
+                                    onSelected: (_) => setState(
+                                      () => _dealCategoryFilter = category,
+                                    ),
+                                    selectedColor: const Color(0xFF3E2723),
+                                    backgroundColor: Colors.white,
+                                    showCheckmark: false,
+                                    labelStyle: TextStyle(
+                                      color: selected
+                                          ? Colors.white
+                                          : const Color(0xFF5D4037),
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 12,
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            if (_filteredDeals.isEmpty)
+                              const _EmptyState(
+                                label: 'No deals match this filter',
+                              )
+                            else
+                              Column(
+                                children: _filteredDeals
+                                    .map(
+                                      (deal) => _DealTile(
+                                        deal: deal,
+                                        onToggle: () => _toggleDeal(deal),
+                                        onEdit: () => _openDealEditor(deal),
+                                        onDelete: () => _deleteDeal(deal),
+                                      ),
+                                    )
+                                    .toList(),
+                              ),
+                          ],
+                        ),
+                      ),
+                    if (_selectedSection == 'All') const SizedBox(height: 20),
+                    if (_selectedSection == 'All' ||
+                        _selectedSection == 'Orders')
+                      AdminOrdersSection(
+                        key: _ordersSectionKey,
+                        loadOrders: widget.loadAdminOrders,
+                        updateStatus: widget.updateAdminOrderStatus,
+                        loadPointsRate: widget.loadOrderPointsRate,
+                        onOrderUpdated: widget.onAdminChanged == null
+                            ? null
+                            : () async => widget.onAdminChanged?.call(),
+                      ),
+                    if (_selectedSection == 'All') ...[
+                      const SizedBox(height: 20),
+                      AdminSalesSection(
+                        key: _salesSectionKey,
+                        compact: true,
+                        loadReport: widget.loadSalesReport,
+                      ),
+                    ],
+                    if (_selectedSection == 'Sales')
+                      AdminSalesSection(
+                        key: _salesSectionKey,
+                        loadReport: widget.loadSalesReport,
+                      ),
+                  ],
+                ),
               ),
             ),
     );
+  }
+
+  Future<void> _confirmLogout() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Log out?'),
+        content: const Text('Are you sure you want to log out?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF3E2723),
+            ),
+            child: const Text('Log out'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    try {
+      await widget.onLoggedOut();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to log out: $error')));
+    }
   }
 }
 
@@ -1025,10 +1405,7 @@ class _PromotionTile extends StatelessWidget {
                   '${promotion.subtitle} · ${promotion.category}',
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Colors.grey[700],
-                  ),
+                  style: TextStyle(fontSize: 11, color: Colors.grey[700]),
                 ),
                 const SizedBox(height: 4),
                 Text(
@@ -1054,8 +1431,14 @@ class _PromotionTile extends StatelessWidget {
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  IconButton(onPressed: onEdit, icon: const Icon(Icons.edit_outlined, size: 18)),
-                  IconButton(onPressed: onDelete, icon: const Icon(Icons.delete_outline, size: 18)),
+                  IconButton(
+                    onPressed: onEdit,
+                    icon: const Icon(Icons.edit_outlined, size: 18),
+                  ),
+                  IconButton(
+                    onPressed: onDelete,
+                    icon: const Icon(Icons.delete_outline, size: 18),
+                  ),
                 ],
               ),
             ],
@@ -1117,10 +1500,7 @@ class _RewardTile extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   '${reward.pointsCost} pts • ${reward.stock} left • ${reward.category}',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Colors.grey[700],
-                  ),
+                  style: TextStyle(fontSize: 11, color: Colors.grey[700]),
                 ),
               ],
             ),
@@ -1137,8 +1517,14 @@ class _RewardTile extends StatelessWidget {
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  IconButton(onPressed: onEdit, icon: const Icon(Icons.edit_outlined, size: 18)),
-                  IconButton(onPressed: onDelete, icon: const Icon(Icons.delete_outline, size: 18)),
+                  IconButton(
+                    onPressed: onEdit,
+                    icon: const Icon(Icons.edit_outlined, size: 18),
+                  ),
+                  IconButton(
+                    onPressed: onDelete,
+                    icon: const Icon(Icons.delete_outline, size: 18),
+                  ),
                 ],
               ),
             ],
@@ -1202,7 +1588,10 @@ class _DealTile extends StatelessWidget {
                       ),
                     ),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 3,
+                      ),
                       decoration: BoxDecoration(
                         color: const Color(0xFFF1E4D5),
                         borderRadius: BorderRadius.circular(999),
@@ -1230,13 +1619,19 @@ class _DealTile extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
+                  formatPeso(deal.price),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF3E2723),
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
                   deal.description,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Colors.grey[700],
-                  ),
+                  style: TextStyle(fontSize: 11, color: Colors.grey[700]),
                 ),
               ],
             ),
@@ -1253,8 +1648,14 @@ class _DealTile extends StatelessWidget {
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  IconButton(onPressed: onEdit, icon: const Icon(Icons.edit_outlined, size: 18)),
-                  IconButton(onPressed: onDelete, icon: const Icon(Icons.delete_outline, size: 18)),
+                  IconButton(
+                    onPressed: onEdit,
+                    icon: const Icon(Icons.edit_outlined, size: 18),
+                  ),
+                  IconButton(
+                    onPressed: onDelete,
+                    icon: const Icon(Icons.delete_outline, size: 18),
+                  ),
                 ],
               ),
             ],

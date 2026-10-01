@@ -134,11 +134,19 @@ class _AuthFormState extends State<_AuthForm> {
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
 
-    if (name.isEmpty) {
+    if (widget.isRegister && name.isEmpty) {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Please enter your name.')));
+      return;
+    }
+
+    if (!widget.isRegister && name.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Please enter your email.')));
       return;
     }
 
@@ -162,33 +170,9 @@ class _AuthFormState extends State<_AuthForm> {
 
     try {
       late final AuthResponse authResponse;
-      String resolvedEmail = email;
+      final resolvedEmail = widget.isRegister ? email : name;
 
       if (widget.buttonLabel == 'Login') {
-        if (name.isEmpty) {
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Please enter your name.')),
-          );
-          return;
-        }
-
-        final emailFromName = await SupabaseProfilesService()
-            .getEmailByName(name.trim());
-        debugPrint('Resolved email: $emailFromName');
-        if (emailFromName == null || emailFromName.isEmpty) {
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'No account found for that username. Please register first.',
-              ),
-            ),
-          );
-          return;
-        }
-
-        resolvedEmail = emailFromName;
         authResponse = await Supabase.instance.client.auth.signInWithPassword(
           email: resolvedEmail,
           password: password,
@@ -229,15 +213,15 @@ class _AuthFormState extends State<_AuthForm> {
       }
 
       if (widget.buttonLabel == 'Register') {
-        final success = await SupabaseProfilesService().createOrUpdateProfile(
-          userId: user.id,
-          email: email,
-          fullName: name.trim(),
-          username: name.trim(),
-        );
+        if (session != null) {
+          final success = await SupabaseProfilesService().createOrUpdateProfile(
+            userId: user.id,
+            email: email,
+            fullName: name.trim(),
+            username: name.trim(),
+          );
 
-        if (!success) {
-          throw Exception('Profile creation failed.');
+          if (!success) throw Exception('Profile creation failed.');
         }
 
         if (!mounted) return;
@@ -251,15 +235,15 @@ class _AuthFormState extends State<_AuthForm> {
         return;
       }
 
-      final success = await SupabaseProfilesService().createOrUpdateProfile(
-        userId: user.id,
-        email: resolvedEmail,
-        fullName: name.trim(),
-        username: name.trim(),
-      );
-
-      if (!success) {
-        throw Exception('Profile creation failed.');
+      final profiles = SupabaseProfilesService();
+      final profile = await profiles.getProfile(user.id);
+      if (profile == null) {
+        final success = await profiles.createOrUpdateProfile(
+          userId: user.id,
+          email: resolvedEmail,
+          fullName: resolvedEmail.split('@').first,
+        );
+        if (!success) throw Exception('Profile creation failed.');
       }
 
       if (!mounted) return;
@@ -331,8 +315,11 @@ class _AuthFormState extends State<_AuthForm> {
           const SizedBox(height: 16),
           TextField(
             controller: _nameController,
-            decoration: const InputDecoration(
-              labelText: 'Name',
+            keyboardType: widget.isRegister
+                ? TextInputType.name
+                : TextInputType.emailAddress,
+            decoration: InputDecoration(
+              labelText: widget.isRegister ? 'Name' : 'Email',
               border: OutlineInputBorder(),
             ),
           ),

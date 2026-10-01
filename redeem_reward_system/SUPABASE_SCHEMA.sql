@@ -51,10 +51,10 @@ BEGIN
     RAISE EXCEPTION 'AUTH_REQUIRED: User must be signed in to claim the daily reward.';
   END IF;
 
-  SELECT * INTO last_claim
-  FROM public.daily_rewards
-  WHERE user_id = current_user_id
-  ORDER BY claimed_at DESC
+  SELECT dr.* INTO last_claim
+  FROM public.daily_rewards AS dr
+  WHERE dr.user_id = current_user_id
+  ORDER BY dr.claimed_at DESC
   LIMIT 1;
 
   IF last_claim.id IS NOT NULL THEN
@@ -72,10 +72,10 @@ BEGIN
   ORDER BY random()
   LIMIT 1;
 
-  SELECT points, lifetime_points
+  SELECT p.points, p.lifetime_points
   INTO current_points, current_lifetime_points
-  FROM public.profiles
-  WHERE id = current_user_id;
+  FROM public.profiles AS p
+  WHERE p.id = current_user_id;
 
   IF current_points IS NULL THEN
     current_points := 0;
@@ -89,9 +89,17 @@ BEGIN
       lifetime_points = current_lifetime_points + selected_reward_amount
   WHERE id = current_user_id;
 
-  INSERT INTO public.daily_rewards (user_id, reward_points, streak_day, claimed_at)
+  INSERT INTO public.daily_rewards AS inserted_reward (
+    user_id,
+    reward_points,
+    streak_day,
+    claimed_at
+  )
   VALUES (current_user_id, selected_reward_amount, new_streak, claim_time)
-  RETURNING reward_points, streak_day, (current_points + selected_reward_amount), claimed_at
+  RETURNING inserted_reward.reward_points,
+    inserted_reward.streak_day,
+    (current_points + selected_reward_amount),
+    inserted_reward.claimed_at
   INTO v_reward_points, v_streak_day, v_new_points, v_claimed_at;
 
   reward_points := v_reward_points;

@@ -1,10 +1,30 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
 import '../app_state.dart';
+import '../services/cart_state.dart';
+import '../services/currency_formatter.dart';
+import '../services/orders_service.dart';
+import '../services/supabase_profiles.dart';
+import 'cart_screen.dart';
 
 class DealsScreen extends StatefulWidget {
   final AppState state;
+  final Future<OrderPlacement> Function(List<CartItem>)? placeOrder;
+  final DealsLoader? loadDeals;
+  final DealsWatcher? watchDeals;
+  final bool isActive;
 
-  const DealsScreen({super.key, required this.state});
+  const DealsScreen({
+    super.key,
+    required this.state,
+    this.placeOrder,
+    this.loadDeals,
+    this.watchDeals,
+    this.isActive = true,
+  });
 
   @override
   State<DealsScreen> createState() => _DealsScreenState();
@@ -12,8 +32,81 @@ class DealsScreen extends StatefulWidget {
 
 class _DealsScreenState extends State<DealsScreen> {
   String _selectedCategory = 'All';
+  StreamSubscription<List<DealItem>>? _dealSubscription;
 
-  List<DealItem> get _deals => widget.state.deals.where((deal) => deal.isActive).toList();
+  @override
+  void initState() {
+    super.initState();
+    if (widget.isActive) _activateDeals();
+  }
+
+  @override
+  void didUpdateWidget(covariant DealsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isActive == widget.isActive) return;
+    if (widget.isActive) {
+      _activateDeals();
+    } else {
+      _dealSubscription?.cancel();
+      _dealSubscription = null;
+    }
+  }
+
+  void _activateDeals() {
+    if (widget.watchDeals != null) {
+      _dealSubscription = widget.watchDeals!(activeOnly: true).listen(
+        _applyDeals,
+        onError: (Object error) => debugPrint('Deals realtime error: $error'),
+      );
+    } else {
+      _dealSubscription = SupabaseProfilesService()
+          .streamDeals(activeOnly: true)
+          .listen(
+            _applyDeals,
+            onError: (Object error) =>
+                debugPrint('Deals realtime error: $error'),
+          );
+    }
+    unawaited(_refreshDeals());
+  }
+
+  @override
+  void dispose() {
+    _dealSubscription?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _refreshDeals() async {
+    try {
+      final deals =
+          await (widget.loadDeals ?? SupabaseProfilesService().getDeals)(
+            activeOnly: true,
+          );
+      _applyDeals(deals);
+    } catch (error) {
+      debugPrint('Failed to refresh deals: $error');
+    }
+  }
+
+  void _applyDeals(List<DealItem> deals) {
+    widget.state.deals = deals;
+    final changedPrices = context.read<CartState>().refreshDeals(deals);
+    if (mounted) setState(() {});
+    if (mounted && changedPrices.isNotEmpty) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              'Updated price${changedPrices.length == 1 ? '' : 's'}: ${changedPrices.join(', ')}',
+            ),
+          ),
+        );
+    }
+  }
+
+  List<DealItem> get _deals =>
+      widget.state.deals.where((deal) => deal.isActive).toList();
 
   List<String> get _categories {
     final categories = _deals.map((deal) => deal.category).toSet().toList();
@@ -41,6 +134,29 @@ class _DealsScreenState extends State<DealsScreen> {
         backgroundColor: const Color(0xFFF5F0E8),
         elevation: 0,
         centerTitle: false,
+        actions: [
+          Consumer<CartState>(
+            builder: (context, cart, child) => IconButton(
+              tooltip: 'Open cart',
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => CartScreen(
+                    state: widget.state,
+                    placeOrder: widget.placeOrder,
+                    loadDeals: widget.loadDeals,
+                  ),
+                ),
+              ),
+              icon: Badge(
+                isLabelVisible: cart.totalItemCount > 0,
+                label: Text('${cart.totalItemCount}'),
+                child: const Icon(Icons.shopping_cart_outlined),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
@@ -85,7 +201,10 @@ class _DealsScreenState extends State<DealsScreen> {
             ..._visibleDeals.map(
               (deal) => Padding(
                 padding: const EdgeInsets.only(bottom: 14),
-                child: _DealCard(deal: deal, onOrder: () => _placeOrder(deal)),
+                child: _DealCard(
+                  deal: deal,
+                  onAddToCart: () => _addToCart(deal),
+                ),
               ),
             ),
         ],
@@ -93,19 +212,14 @@ class _DealsScreenState extends State<DealsScreen> {
     );
   }
 
-  void _placeOrder(DealItem deal) {
-    final orderCode =
-        'KPT-${DateTime.now().millisecondsSinceEpoch.toRadixString(36).toUpperCase().substring(4)}';
-    final order = DealOrder(
-      deal: deal,
-      orderCode: orderCode,
-      orderedAt: DateTime.now(),
-    );
-    setState(() => widget.state.dealOrders.insert(0, order));
-    showDialog<void>(
-      context: context,
-      builder: (_) => _OrderCodeDialog(order: order),
-    );
+  void _addToCart(DealItem deal) {
+    final added = context.read<CartState>().add(deal);
+    final message = added
+        ? '${deal.name} added to cart'
+        : 'Maximum quantity of ${CartState.maxQuantity} reached';
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 }
 
@@ -179,9 +293,9 @@ class _DealsIntro extends StatelessWidget {
 
 class _DealCard extends StatelessWidget {
   final DealItem deal;
-  final VoidCallback onOrder;
+  final VoidCallback onAddToCart;
 
-  const _DealCard({required this.deal, required this.onOrder});
+  const _DealCard({required this.deal, required this.onAddToCart});
 
   @override
   Widget build(BuildContext context) {
@@ -224,6 +338,15 @@ class _DealCard extends StatelessWidget {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
+                const SizedBox(height: 4),
+                Text(
+                  formatPeso(deal.price),
+                  style: const TextStyle(
+                    color: Color(0xFF3E2723),
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 const SizedBox(height: 5),
                 Text(
                   deal.badge,
@@ -257,9 +380,9 @@ class _DealCard extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           FilledButton.icon(
-            onPressed: onOrder,
+            onPressed: onAddToCart,
             icon: const Icon(Icons.add_shopping_cart, size: 17),
-            label: const Text('Order'),
+            label: const Text('Add to cart'),
             style: FilledButton.styleFrom(
               backgroundColor: const Color(0xFF3E2723),
               foregroundColor: Colors.white,
@@ -270,119 +393,6 @@ class _DealCard extends StatelessWidget {
       ),
     );
   }
-}
-
-class _OrderCodeDialog extends StatelessWidget {
-  final DealOrder order;
-
-  const _OrderCodeDialog({required this.order});
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Row(
-        children: [
-          Icon(Icons.check_circle, color: Color(0xFF2E7D32)),
-          SizedBox(width: 8),
-          Text('Order ready'),
-        ],
-      ),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            order.deal.name,
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 16),
-          Container(
-            width: 148,
-            height: 148,
-            padding: const EdgeInsets.all(12),
-            color: Colors.white,
-            child: CustomPaint(painter: _OrderCodePainter(order.orderCode)),
-          ),
-          const SizedBox(height: 14),
-          const Text(
-            'Show this code at the store counter',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Color(0xFF6D5B53), fontSize: 13),
-          ),
-          const SizedBox(height: 8),
-          SelectableText(
-            order.orderCode,
-            style: const TextStyle(
-              color: Color(0xFF3E2723),
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 1.4,
-            ),
-          ),
-        ],
-      ),
-      actions: [
-        FilledButton(
-          onPressed: () => Navigator.pop(context),
-          style: FilledButton.styleFrom(
-            backgroundColor: const Color(0xFF3E2723),
-          ),
-          child: const Text('Done'),
-        ),
-      ],
-    );
-  }
-}
-
-class _OrderCodePainter extends CustomPainter {
-  final String value;
-
-  _OrderCodePainter(this.value);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = const Color(0xFF3E2723);
-    final seed = value.codeUnits.fold(0, (total, code) => total + code);
-    const cells = 17;
-    final cellSize = size.width / cells;
-    for (var row = 0; row < cells; row++) {
-      for (var column = 0; column < cells; column++) {
-        final inFinder =
-            _finder(row, column, 0, 0) ||
-            _finder(row, column, 0, cells - 7) ||
-            _finder(row, column, cells - 7, 0);
-        final filled = inFinder
-            ? _finderFilled(row, column)
-            : ((seed + row * 17 + column * 31) % 7 < 3);
-        if (filled) {
-          canvas.drawRect(
-            Rect.fromLTWH(
-              column * cellSize,
-              row * cellSize,
-              cellSize,
-              cellSize,
-            ),
-            paint,
-          );
-        }
-      }
-    }
-  }
-
-  bool _finder(int row, int column, int top, int left) =>
-      row >= top && row < top + 7 && column >= left && column < left + 7;
-
-  bool _finderFilled(int row, int column) {
-    final edgeRow = row % 7 == 0 || row % 7 == 6;
-    final edgeColumn = column % 7 == 0 || column % 7 == 6;
-    return edgeRow ||
-        edgeColumn ||
-        (row % 7 >= 2 && row % 7 <= 4 && column % 7 >= 2 && column % 7 <= 4);
-  }
-
-  @override
-  bool shouldRepaint(covariant _OrderCodePainter oldDelegate) =>
-      oldDelegate.value != value;
 }
 
 class _EmptyDeals extends StatelessWidget {

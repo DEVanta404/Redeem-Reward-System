@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../app_state.dart';
 import '../services/daily_rewards_service.dart';
-import 'promotions_screen.dart';
 import 'daily_reward_slot_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -229,10 +228,6 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     _countdownTimer.cancel();
     super.dispose();
-  }
-
-  List<Promotion> _getFilteredAndSortedPromotions() {
-    return widget.state.promotions.where((p) => !p.isExpired).toList();
   }
 
   String get _greeting {
@@ -488,39 +483,6 @@ class _HomeScreenState extends State<HomeScreen> {
               // ── Daily Reward Card ───────────────────────────────────
               _buildDailyRewardCard(),
               const SizedBox(height: 24),
-
-              // ── Today's Promo ───────────────────────────────────────
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    "Today's Promo",
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF3E2723),
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => PromotionsScreen(
-                          promotions: widget.state.promotions,
-                        ),
-                      ),
-                    ),
-                    child: const Text(
-                      'See all',
-                      style: TextStyle(color: Color(0xFFFFA000)),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              ..._getFilteredAndSortedPromotions()
-                  .take(2)
-                  .map((p) => _PromoCard(promo: p)),
             ],
           ),
         ),
@@ -685,20 +647,45 @@ class _HomeScreenState extends State<HomeScreen> {
                     ? const Color(0xFFF7D57A)
                     : const Color(0xFFE7B765),
                 foregroundColor: const Color(0xFF3E2723),
+                disabledBackgroundColor: const Color(
+                  0xFFF8F2EA,
+                ).withValues(alpha: 0.16),
+                disabledForegroundColor: const Color(0xFFF8F2EA),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
+                  side: _canClaimToday
+                      ? BorderSide.none
+                      : BorderSide(
+                          color: const Color(0xFFF8F2EA).withValues(alpha: 0.3),
+                        ),
                 ),
                 elevation: 0,
               ),
               onPressed: _canClaimToday ? _claimDailyReward : null,
-              child: Text(
-                _canClaimToday ? 'CLAIM REWARD' : 'ALREADY CLAIMED',
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 0.5,
-                ),
-              ),
+              child: _canClaimToday
+                  ? const Text(
+                      'CLAIM REWARD',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.5,
+                      ),
+                    )
+                  : const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.check_circle_outline, size: 17),
+                        SizedBox(width: 8),
+                        Text(
+                          'ALREADY CLAIMED',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ],
+                    ),
             ),
           ),
         ],
@@ -766,157 +753,6 @@ class _QuickCard extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _PromoCard extends StatefulWidget {
-  final Promotion promo;
-  const _PromoCard({required this.promo});
-
-  @override
-  State<_PromoCard> createState() => _PromoCardState();
-}
-
-class _PromoCardState extends State<_PromoCard> {
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [const Color(0xFF4A342D), const Color(0xFF3A2723)],
-        ),
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF2C1D1A).withValues(alpha: 0.35),
-            blurRadius: 14,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Stack(
-        children: [
-          Positioned(
-            right: -20,
-            top: -18,
-            child: Container(
-              width: 120,
-              height: 120,
-              decoration: BoxDecoration(
-                color: const Color(0xFF5D4037).withValues(alpha: 0.24),
-                borderRadius: BorderRadius.circular(30),
-              ),
-            ),
-          ),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFC19A6B).withValues(alpha: 0.16),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: const Color(0xFFC19A6B).withValues(alpha: 0.4),
-                    width: 1,
-                  ),
-                ),
-                child: Icon(
-                  widget.promo.icon,
-                  color: const Color(0xFFD4A574),
-                  size: 22,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 5,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF9B8B7E).withValues(alpha: 0.18),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(
-                          color: const Color(0xFFC19A6B).withValues(alpha: 0.4),
-                          width: 1,
-                        ),
-                      ),
-                      child: Text(
-                        widget.promo.category.isNotEmpty
-                            ? widget.promo.category
-                                  .replaceAll('_', ' ')
-                                  .toUpperCase()
-                            : 'PROMO',
-                        style: const TextStyle(
-                          color: Color(0xFFD4A574),
-                          fontSize: 9,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 0.7,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      widget.promo.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 15,
-                        color: Color(0xFFF8F2EA),
-                        height: 1.25,
-                      ),
-                    ),
-                    if (widget.promo.subtitle.isNotEmpty) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        widget.promo.subtitle,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Color(0xFFE7DACC),
-                          height: 1.3,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              const SizedBox(width: 10),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFD4A574).withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: const Color(0xFFD4A574).withValues(alpha: 0.35),
-                    width: 1,
-                  ),
-                ),
-                child: Text(
-                  'Until ${widget.promo.validUntil}',
-                  style: const TextStyle(
-                    fontSize: 10,
-                    color: Color(0xFFD4A574),
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
       ),
     );
   }

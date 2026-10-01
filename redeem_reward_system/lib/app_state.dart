@@ -61,8 +61,13 @@ class AppTransaction {
   factory AppTransaction.fromMap(Map<String, dynamic> map) {
     final pointsSpent =
         int.tryParse(map['points_spent']?.toString() ?? '') ?? 0;
+    final type =
+        map['transaction_type']?.toString() ??
+        map['type']?.toString() ??
+        'redemption';
     final pointsValue =
-        int.tryParse(map['points']?.toString() ?? '') ?? -pointsSpent;
+        int.tryParse(map['points']?.toString() ?? '') ??
+        (type == 'earned' ? pointsSpent : -pointsSpent);
     final rewardName = map['reward_name']?.toString();
     return AppTransaction(
       date:
@@ -73,11 +78,12 @@ class AppTransaction {
       points: pointsValue,
       description:
           map['description']?.toString() ??
-          (rewardName == null ? 'Redeemed reward' : 'Redeemed $rewardName'),
-      type:
-          map['transaction_type']?.toString() ??
-          map['type']?.toString() ??
-          'redemption',
+          (type == 'earned'
+              ? (rewardName ?? 'Earned points')
+              : (rewardName == null
+                    ? 'Redeemed reward'
+                    : 'Redeemed $rewardName')),
+      type: type,
     );
   }
 }
@@ -226,6 +232,7 @@ class DealItem {
   final String badge;
   final IconData icon;
   final bool isActive;
+  final double price;
 
   const DealItem({
     required this.id,
@@ -235,7 +242,58 @@ class DealItem {
     required this.badge,
     required this.icon,
     this.isActive = true,
+    this.price = 0,
   });
+
+  factory DealItem.fromMap(Map<String, dynamic> map) => DealItem(
+    id: map['id']?.toString() ?? '',
+    name: map['name']?.toString() ?? 'Deal',
+    description: map['description']?.toString() ?? '',
+    category: map['category']?.toString() ?? 'General',
+    badge: map['badge']?.toString() ?? 'NEW',
+    icon: iconFromName(map['icon_name']?.toString() ?? 'local_cafe'),
+    isActive: map['is_active'] == true,
+    price: double.tryParse(map['price']?.toString() ?? '') ?? 0,
+  );
+
+  factory DealItem.fromJson(Map<String, dynamic> json) =>
+      DealItem.fromMap(json);
+
+  Map<String, dynamic> toMap() => {
+    'id': id,
+    'name': name,
+    'description': description,
+    'category': category,
+    'badge': badge,
+    'icon_name': iconName(icon),
+    'is_active': isActive,
+    'price': price,
+  };
+
+  Map<String, dynamic> toJson() => toMap();
+
+  static String iconName(IconData icon) {
+    if (icon == Icons.auto_awesome) return 'auto_awesome';
+    if (icon == Icons.bakery_dining) return 'bakery_dining';
+    if (icon == Icons.free_breakfast) return 'free_breakfast';
+    if (icon == Icons.local_bar) return 'local_bar';
+    return 'local_cafe';
+  }
+
+  static IconData iconFromName(String name) {
+    switch (name) {
+      case 'auto_awesome':
+        return Icons.auto_awesome;
+      case 'bakery_dining':
+        return Icons.bakery_dining;
+      case 'free_breakfast':
+        return Icons.free_breakfast;
+      case 'local_bar':
+        return Icons.local_bar;
+      default:
+        return Icons.local_cafe;
+    }
+  }
 
   DealItem copyWith({
     String? id,
@@ -245,6 +303,7 @@ class DealItem {
     String? badge,
     IconData? icon,
     bool? isActive,
+    double? price,
   }) {
     return DealItem(
       id: id ?? this.id,
@@ -254,19 +313,38 @@ class DealItem {
       badge: badge ?? this.badge,
       icon: icon ?? this.icon,
       isActive: isActive ?? this.isActive,
+      price: price ?? this.price,
     );
   }
 }
 
+class DealOrderItem {
+  final String id;
+  final String name;
+  final String category;
+  final int quantity;
+  final double unitPrice;
+
+  const DealOrderItem({
+    required this.id,
+    required this.name,
+    required this.category,
+    required this.quantity,
+    required this.unitPrice,
+  });
+}
+
 class DealOrder {
-  final DealItem deal;
+  final List<DealOrderItem> items;
   final String orderCode;
   final DateTime orderedAt;
+  final double total;
 
   const DealOrder({
-    required this.deal,
+    required this.items,
     required this.orderCode,
     required this.orderedAt,
+    required this.total,
   });
 }
 
