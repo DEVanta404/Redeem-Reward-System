@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/supabase_profiles.dart';
+import '../services/password_policy.dart';
+import '../widgets/password_policy_panel.dart';
 
 class AuthScreen extends StatelessWidget {
   final Future<void> Function() onAuthenticated;
@@ -71,7 +74,7 @@ class AuthScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 20),
                       SizedBox(
-                        height: 430,
+                        height: 620,
                         child: TabBarView(
                           children: [
                             _AuthForm(
@@ -126,13 +129,20 @@ class _AuthFormState extends State<_AuthForm> {
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
   bool _isLoading = false;
-  bool _showPassword = false;
+  bool _suggestedPassword = false;
+
+  bool get _passwordValid => PasswordPolicy.evaluate(
+    _passwordController.text,
+    email: _emailController.text,
+    displayName: _nameController.text,
+  ).isValid;
 
   Future<void> _submit() async {
     final name = _nameController.text.trim();
     final email = _emailController.text.trim();
-    final password = _passwordController.text.trim();
+    final password = _passwordController.text;
 
     if (widget.isRegister && name.isEmpty) {
       if (!mounted) return;
@@ -166,13 +176,28 @@ class _AuthFormState extends State<_AuthForm> {
       return;
     }
 
+    if (widget.isRegister) {
+      if (!_passwordValid) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please meet every password requirement.')),
+        );
+        return;
+      }
+      if (_passwordController.text != _confirmPasswordController.text) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('The passwords do not match.')),
+        );
+        return;
+      }
+    }
+
     setState(() => _isLoading = true);
 
     try {
       late final AuthResponse authResponse;
       final resolvedEmail = widget.isRegister ? email : name;
 
-      if (widget.buttonLabel == 'Login') {
+      if (!widget.isRegister) {
         authResponse = await Supabase.instance.client.auth.signInWithPassword(
           email: resolvedEmail,
           password: password,
@@ -251,33 +276,39 @@ class _AuthFormState extends State<_AuthForm> {
     } on AuthException catch (error) {
       if (!mounted) return;
 
-      String displayMessage = error.message;
+      final lowerMessage = error.message.toLowerCase();
+      String displayMessage = 'We could not complete authentication. Please try again.';
 
-      if (error.message.contains('already registered') ||
-          error.message.contains('already exists')) {
+      if (lowerMessage.contains('already registered') ||
+          lowerMessage.contains('already exists')) {
         displayMessage =
             'This email is already registered. Please try logging in instead.';
-      } else if (error.message.contains('invalid') ||
-          error.message.contains('credentials')) {
-        if (widget.buttonLabel == 'Login') {
+      } else if (lowerMessage.contains('invalid') ||
+          lowerMessage.contains('credentials')) {
+        if (!widget.isRegister) {
           displayMessage = 'Invalid credentials. Please check and try again.';
         } else {
           displayMessage =
               'Registration failed. Please try again with different credentials.';
         }
-      } else if (error.message.contains('Email not confirmed')) {
+      } else if (lowerMessage.contains('email not confirmed')) {
         displayMessage =
             'Please confirm your email address before logging in. Check your email for a confirmation link.';
+      } else if (lowerMessage.contains('password')) {
+        displayMessage =
+            'Please choose a password that meets the password requirements.';
       }
 
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(displayMessage)));
-    } catch (error) {
+    } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Unexpected error: $error')));
+      ).showSnackBar(
+        const SnackBar(content: Text('Something went wrong. Please try again.')),
+      );
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -290,6 +321,7 @@ class _AuthFormState extends State<_AuthForm> {
     _nameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
+    _confirmPasswordController.dispose();
     super.dispose();
   }
 
@@ -322,6 +354,9 @@ class _AuthFormState extends State<_AuthForm> {
               labelText: widget.isRegister ? 'Name' : 'Email',
               border: OutlineInputBorder(),
             ),
+            onChanged: (_) {
+              if (widget.isRegister) setState(() {});
+            },
           ),
           const SizedBox(height: 12),
           if (widget.isRegister)
@@ -334,27 +369,82 @@ class _AuthFormState extends State<_AuthForm> {
                   labelText: 'Email',
                   border: OutlineInputBorder(),
                 ),
+                onChanged: (_) => setState(() {}),
               ),
             ),
-          TextField(
+          PasswordTextField(
             controller: _passwordController,
-            obscureText: !_showPassword,
-            decoration: InputDecoration(
-              labelText: 'Password',
-              border: const OutlineInputBorder(),
-              suffixIcon: IconButton(
-                icon: Icon(
-                  _showPassword ? Icons.visibility : Icons.visibility_off,
-                ),
-                onPressed: () => setState(() => _showPassword = !_showPassword),
-              ),
-            ),
+            label: 'Password',
+            onChanged: (_) {
+              if (_suggestedPassword) _suggestedPassword = false;
+              setState(() {});
+            },
           ),
+          if (widget.isRegister) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                TextButton.icon(
+                  onPressed: () {
+                    final suggested = PasswordPolicy.suggest(
+                      email: _emailController.text,
+                      displayName: _nameController.text,
+                    );
+                    setState(() {
+                      _passwordController.text = suggested;
+                      _confirmPasswordController.clear();
+                      _suggestedPassword = true;
+                    });
+                  },
+                  icon: const Icon(Icons.auto_awesome, size: 18),
+                  label: const Text('Suggest a strong password'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: const Color(0xFF3E2723),
+                    padding: EdgeInsets.zero,
+                  ),
+                ),
+                if (_suggestedPassword)
+                  IconButton(
+                    tooltip: 'Copy suggested password',
+                    onPressed: () async {
+                      await Clipboard.setData(
+                        ClipboardData(text: _passwordController.text),
+                      );
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Suggested password copied.'),
+                          ),
+                        );
+                      }
+                    },
+                    icon: const Icon(Icons.copy, color: Color(0xFF3E2723)),
+                  ),
+              ],
+            ),
+            PasswordPolicyPanel(
+              password: _passwordController.text,
+              email: _emailController.text,
+              displayName: _nameController.text,
+            ),
+            const SizedBox(height: 12),
+            PasswordTextField(
+              controller: _confirmPasswordController,
+              label: 'Confirm Password',
+              onChanged: (_) => setState(() {}),
+            ),
+          ],
           const SizedBox(height: 20),
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              onPressed: _isLoading ? null : _submit,
+              onPressed: _isLoading ||
+                      (widget.isRegister && !_passwordValid) ||
+                      (widget.isRegister &&
+                          _passwordController.text !=
+                              _confirmPasswordController.text)
+                  ? null
+                  : _submit,
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF3E2723),
                 foregroundColor: Colors.white,

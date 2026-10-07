@@ -62,6 +62,13 @@ class AdminOrdersSectionState extends State<AdminOrdersSection> {
 
   Future<void> refresh() => _loadOrders(reset: true);
 
+  Future<bool> openOrderById(String orderId) async {
+    final order = await _orderService.getOrderById(orderId);
+    if (!mounted || order == null) return false;
+    _showDetails(order);
+    return true;
+  }
+
   Future<void> _loadOrders({required bool reset}) async {
     if (reset) {
       setState(() {

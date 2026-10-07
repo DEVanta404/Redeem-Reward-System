@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../app_state.dart';
 
 class RedeemScreen extends StatefulWidget {
@@ -166,10 +167,29 @@ class _RedeemScreenState extends State<RedeemScreen>
           ElevatedButton(
             onPressed: () async {
               Navigator.pop(ctx);
-              await widget.state.redeemReward(reward);
-              if (!context.mounted) return;
-              widget.onRedeem();
-              _showSuccess(context, reward);
+              try {
+                await widget.state.redeemReward(reward);
+                if (!context.mounted) return;
+                widget.onRedeem();
+                _showSuccess(context, reward);
+              } on PostgrestException catch (error) {
+                if (!context.mounted) return;
+                final message = error.message.contains('INSUFFICIENT_POINTS')
+                    ? 'You do not have enough points for this reward.'
+                    : error.message.contains('REWARD_UNAVAILABLE')
+                    ? 'This reward is no longer available.'
+                    : 'Could not redeem this reward. Please try again.';
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(SnackBar(content: Text(message)));
+              } catch (_) {
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Could not redeem this reward. Please try again.'),
+                  ),
+                );
+              }
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF3E2723),

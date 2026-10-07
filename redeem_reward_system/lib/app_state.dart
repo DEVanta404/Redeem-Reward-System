@@ -843,30 +843,13 @@ class AppState {
   }
 
   Future<void> redeemReward(RewardItem reward) async {
-    points -= reward.pointsCost;
-
-    // Persist updated points to Supabase if we have a user id.
     if (user.id.isNotEmpty) {
-      try {
-        await SupabaseProfilesService().persistRedemption(
-          userId: user.id,
-          points: points,
-          rewardName: reward.name,
-          pointsSpent: reward.pointsCost,
-        );
-
-        // Optionally re-fetch profile to ensure local state matches DB.
-        final profile = await SupabaseProfilesService().getProfile(user.id);
-        if (profile != null) {
-          points =
-              int.tryParse(
-                profile['points']?.toString() ?? points.toString(),
-              ) ??
-              points;
-        }
-      } catch (e) {
-        debugPrint('Error persisting redeemed points: $e');
+      if (reward.id.isEmpty) {
+        throw StateError('This reward is unavailable. Please refresh and try again.');
       }
+      points = await SupabaseProfilesService().redeemReward(reward.id);
+    } else {
+      points -= reward.pointsCost;
     }
 
     transactions.insert(

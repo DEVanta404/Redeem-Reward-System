@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../app_state.dart';
 import '../services/currency_formatter.dart';
 import '../services/order_history_service.dart';
@@ -7,6 +10,9 @@ import '../services/sales_service.dart';
 import '../services/supabase_profiles.dart';
 import 'admin_orders_section.dart';
 import 'admin_sales_section.dart';
+import 'notifications_screen.dart';
+import '../services/notifications_service.dart';
+import '../widgets/notification_bell.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   final AppState state;
@@ -44,7 +50,8 @@ class AdminDashboardScreen extends StatefulWidget {
   State<AdminDashboardScreen> createState() => _AdminDashboardScreenState();
 }
 
-class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
+class _AdminDashboardScreenState extends State<AdminDashboardScreen>
+    with WidgetsBindingObserver {
   final SupabaseProfilesService _service = SupabaseProfilesService();
   bool _loading = true;
   List<Promotion> _promotions = [];
@@ -54,6 +61,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   String _dealCategoryFilter = 'All';
   String _selectedSection = 'All';
   bool _redirecting = false;
+  int _unreadNotificationCount = 0;
+  int _pendingOrderCount = 0;
+  RealtimeChannel? _notificationChannel;
+  RealtimeChannel? _ordersChannel;
+  Timer? _liveCountRefreshTimer;
+  late final NotificationsService _notificationsService;
   final GlobalKey<AdminSalesSectionState> _salesSectionKey =
       GlobalKey<AdminSalesSectionState>();
   final GlobalKey<AdminOrdersSectionState> _ordersSectionKey =
@@ -71,13 +84,184 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _notificationsService = NotificationsService();
     if (widget.state.user.isAdmin) {
       _loadData();
+      _refreshLiveCounts();
+      _subscribeToLiveEvents();
     } else {
       _redirecting = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) widget.onUnauthorized();
       });
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _liveCountRefreshTimer?.cancel();
+    final client = Supabase.instance.client;
+    final notificationChannel = _notificationChannel;
+    final ordersChannel = _ordersChannel;
+    if (notificationChannel != null) client.removeChannel(notificationChannel);
+    if (ordersChannel != null) client.removeChannel(ordersChannel);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshLiveCounts();
+      if (_selectedSection == 'Orders') {
+        _ordersSectionKey.currentState?.refresh();
+      }
+    }
+  }
+
+  void _subscribeToLiveEvents() {
+    final userId = widget.state.user.id;
+    final client = Supabase.instance.client;
+    _notificationChannel = client
+        .channel('admin-notifications-$userId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'notifications',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'user_id',
+            value: userId,
+          ),
+          callback: (_) {
+            if (Supabase.instance.client.auth.currentUser?.id == userId) {
+              _scheduleLiveCountRefresh();
+            }
+          },
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'public',
+          table: 'notifications',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'user_id',
+            value: userId,
+          ),
+          callback: (_) {
+            if (Supabase.instance.client.auth.currentUser?.id == userId) {
+              _scheduleLiveCountRefresh();
+            }
+          },
+        )
+        .subscribe();
+    _ordersChannel = client
+        .channel('admin-orders-$userId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'orders',
+          callback: (payload) {
+            if (Supabase.instance.client.auth.currentUser?.id != userId) return;
+            _scheduleLiveCountRefresh();
+            if (!mounted) return;
+            final row = payload.newRecord;
+            final code = row['order_code']?.toString() ?? 'new order';
+            final orderId = row['id']?.toString() ?? '';
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('New order $code'),
+                action: SnackBarAction(
+                  label: 'View',
+                  onPressed: () => _openOrderFromRealtime(orderId),
+                ),
+              ),
+            );
+          },
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'public',
+          table: 'orders',
+          callback: (_) => _scheduleLiveCountRefresh(),
+        )
+        .subscribe();
+  }
+
+  void _scheduleLiveCountRefresh() {
+    _liveCountRefreshTimer?.cancel();
+    _liveCountRefreshTimer = Timer(
+      const Duration(milliseconds: 250),
+      () => unawaited(_refreshLiveCounts()),
+    );
+  }
+
+  Future<void> _refreshLiveCounts() async {
+    try {
+      final results = await Future.wait([
+        _notificationsService.unreadCount(),
+        OrderHistoryService().getPendingOrderCount(),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _unreadNotificationCount = results[0];
+        _pendingOrderCount = results[1];
+      });
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Live dashboard counts are unavailable.')),
+      );
+    }
+  }
+
+  Future<void> _openNotifications() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => NotificationsScreen(
+          isAdmin: true,
+          onNotificationSelected: (notification) async {
+            if (notification.type != 'new_order_admin') return;
+            final orderId = notification.data['order_id']?.toString() ?? '';
+            if (orderId.isEmpty) return;
+            setState(() => _selectedSection = 'Orders');
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              unawaited(_openOrderById(orderId));
+            });
+          },
+        ),
+      ),
+    );
+    if (mounted) await _refreshLiveCounts();
+  }
+
+  void _openOrderFromRealtime(String orderId) {
+    if (orderId.isEmpty) return;
+    setState(() => _selectedSection = 'Orders');
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_openOrderById(orderId));
+    });
+  }
+
+  Future<void> _openOrderById(String orderId) async {
+    try {
+      final opened = await _ordersSectionKey.currentState?.openOrderById(
+        orderId,
+      );
+      if (opened == true || !mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('This order is no longer available.')),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Could not open this order. Please refresh and try again.',
+          ),
+        ),
+      );
     }
   }
 
@@ -923,6 +1107,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         backgroundColor: const Color(0xFFF5F0E8),
         elevation: 0,
         actions: [
+          NotificationBell(
+            unreadCount: _unreadNotificationCount,
+            onPressed: _openNotifications,
+          ),
           IconButton(
             tooltip: 'Log out',
             onPressed: _confirmLogout,
@@ -1005,7 +1193,37 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                           final section = _sections[index];
                           final selected = section == _selectedSection;
                           return ChoiceChip(
-                            label: Text(section),
+                            label: section == 'Orders' && _pendingOrderCount > 0
+                                ? Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Text('Orders'),
+                                      const SizedBox(width: 5),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                          vertical: 2,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFC62828),
+                                          borderRadius: BorderRadius.circular(
+                                            20,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          _pendingOrderCount > 99
+                                              ? '99+'
+                                              : '$_pendingOrderCount',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  )
+                                : Text(section),
                             selected: selected,
                             onSelected: (_) =>
                                 setState(() => _selectedSection = section),

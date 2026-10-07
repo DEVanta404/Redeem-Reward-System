@@ -5,16 +5,21 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../app_state.dart';
 import '../services/daily_rewards_service.dart';
+import '../widgets/notification_bell.dart';
 import 'daily_reward_slot_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final AppState state;
   final VoidCallback onNavigateToRedeem;
+  final int unreadNotificationCount;
+  final VoidCallback? onOpenNotifications;
 
   const HomeScreen({
     super.key,
     required this.state,
     required this.onNavigateToRedeem,
+    this.unreadNotificationCount = 0,
+    this.onOpenNotifications,
   });
 
   @override
@@ -275,29 +280,40 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ],
                   ),
-                  CircleAvatar(
-                    backgroundColor: const Color(0xFF3E2723),
-                    radius: 24,
-                    backgroundImage:
-                        widget.state.user.avatarUrl.trim().isNotEmpty
-                        ? NetworkImage(widget.state.user.avatarUrl)
-                        : (widget.state.user.avatarPath.trim().isNotEmpty
-                              ? FileImage(File(widget.state.user.avatarPath))
-                              : null),
-                    child:
-                        (widget.state.user.avatarUrl.trim().isEmpty &&
-                            widget.state.user.avatarPath.trim().isEmpty)
-                        ? Text(
-                            widget.state.user.name.isNotEmpty
-                                ? widget.state.user.name[0].toUpperCase()
-                                : 'U',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          )
-                        : null,
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      NotificationBell(
+                        unreadCount: widget.unreadNotificationCount,
+                        onPressed: widget.onOpenNotifications ?? () {},
+                      ),
+                      CircleAvatar(
+                        backgroundColor: const Color(0xFF3E2723),
+                        radius: 24,
+                        backgroundImage:
+                            widget.state.user.avatarUrl.trim().isNotEmpty
+                            ? NetworkImage(widget.state.user.avatarUrl)
+                            : (widget.state.user.avatarPath.trim().isNotEmpty
+                                  ? FileImage(
+                                      File(widget.state.user.avatarPath),
+                                    )
+                                  : null),
+                        child:
+                            (widget.state.user.avatarUrl.trim().isEmpty &&
+                                widget.state.user.avatarPath.trim().isEmpty)
+                            ? Text(
+                                widget.state.user.name.isNotEmpty
+                                    ? widget.state.user.name[0].toUpperCase()
+                                    : 'U',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              )
+                            : null,
+                      ),
+                    ],
                   ),
                 ],
               ),

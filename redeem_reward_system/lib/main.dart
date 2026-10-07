@@ -17,6 +17,9 @@ import 'screens/user_bottom_navigation_bar.dart';
 import 'screens/profile_screen.dart';
 import 'screens/splash_screen.dart';
 import 'services/daily_rewards_service.dart';
+import 'screens/password_update_screen.dart';
+import 'screens/notifications_screen.dart';
+import 'services/notifications_service.dart';
 
 const supabaseUrl = 'https://hlvwhxtneqdsnofhoplr.supabase.co';
 const supabaseAnonKey =
@@ -157,15 +160,23 @@ class _RewardAppState extends State<RewardApp> {
       _activeUserId = userId;
       _resolvingUserId = null;
       _sessionResolved = true;
-      _replaceRoot(
-        role == 'admin'
-            ? AdminShell(
-                state: _state,
-                onLoggedOut: _signOut,
-                onUnauthorized: _routeUnauthorizedAdmin,
-              )
-            : _buildUserShell(),
-      );
+      final mustChangePassword =
+          profile?['must_change_password'] == true ||
+          profile?['must_change_password']?.toString().toLowerCase() == 'true';
+      if (mustChangePassword) {
+        _replaceRoot(
+          ForcedPasswordUpdateScreen(
+            email: email,
+            displayName: name,
+            onSignOut: _signOut,
+            onPasswordUpdated: () async {
+              _replaceRoot(_buildRoleShell(role));
+            },
+          ),
+        );
+      } else {
+        _replaceRoot(_buildRoleShell(role));
+      }
     } catch (error) {
       if (!mounted || requestId != _resolutionId) return;
       _resolvingUserId = null;
@@ -219,6 +230,14 @@ class _RewardAppState extends State<RewardApp> {
 
   Widget _buildUserShell() =>
       MainScaffold(state: _state, onLoggedOut: _signOut);
+
+  Widget _buildRoleShell(String role) => role == 'admin'
+      ? AdminShell(
+          state: _state,
+          onLoggedOut: _signOut,
+          onUnauthorized: _routeUnauthorizedAdmin,
+        )
+      : _buildUserShell();
 
   void _routeUnauthorizedAdmin() {
     if (_client.auth.currentSession == null) {
@@ -331,8 +350,130 @@ class MainScaffold extends StatefulWidget {
   State<MainScaffold> createState() => _MainScaffoldState();
 }
 
-class _MainScaffoldState extends State<MainScaffold> {
+class _MainScaffoldState extends State<MainScaffold>
+    with WidgetsBindingObserver {
   int _index = 0;
+  int _unreadNotificationCount = 0;
+  RealtimeChannel? _notificationChannel;
+  Timer? _notificationRefreshTimer;
+  late final NotificationsService _notificationsService;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _notificationsService = NotificationsService();
+    if (widget.state.user.id.isNotEmpty) _refreshUnreadCount();
+    _subscribeToNotifications();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _notificationRefreshTimer?.cancel();
+    final channel = _notificationChannel;
+    if (channel != null) {
+      Supabase.instance.client.removeChannel(channel);
+    }
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState lifecycleState) {
+    if (lifecycleState == AppLifecycleState.resumed) _refreshUnreadCount();
+  }
+
+  void _subscribeToNotifications() {
+    final userId = widget.state.user.id;
+    if (userId.isEmpty) return;
+    _notificationChannel = Supabase.instance.client
+        .channel('user-notifications-$userId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'notifications',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'user_id',
+            value: userId,
+          ),
+          callback: (payload) {
+            if (Supabase.instance.client.auth.currentUser?.id != userId) return;
+            _scheduleUnreadRefresh();
+            if (!mounted) return;
+            final row = payload.newRecord;
+            final title = row['title']?.toString() ?? 'New notification';
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(title),
+                action: SnackBarAction(
+                  label: 'View',
+                  onPressed: _openNotifications,
+                ),
+              ),
+            );
+          },
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'public',
+          table: 'notifications',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'user_id',
+            value: userId,
+          ),
+            callback: (_) {
+              if (Supabase.instance.client.auth.currentUser?.id == userId) {
+                _scheduleUnreadRefresh();
+              }
+            },
+          )
+        .subscribe();
+  }
+
+  void _scheduleUnreadRefresh() {
+    _notificationRefreshTimer?.cancel();
+    _notificationRefreshTimer = Timer(
+      const Duration(milliseconds: 250),
+      () => unawaited(_refreshUnreadCount()),
+    );
+  }
+
+  Future<void> _refreshUnreadCount() async {
+    try {
+      final count = await _notificationsService.unreadCount();
+      if (!mounted || Supabase.instance.client.auth.currentUser?.id !=
+          widget.state.user.id) {
+        return;
+      }
+      setState(() => _unreadNotificationCount = count);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Notifications are temporarily unavailable.')),
+      );
+    }
+  }
+
+  Future<void> _openNotifications() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => NotificationsScreen(
+          onNotificationSelected: (notification) async {
+            if (notification.type == 'order_placed' ||
+                notification.type == 'order_completed' ||
+                notification.type == 'order_cancelled') {
+              setState(() => _index = 4);
+            } else if (notification.type == 'reward_redeemed') {
+              setState(() => _index = 1);
+            }
+          },
+        ),
+      ),
+    );
+    if (mounted) await _refreshUnreadCount();
+  }
 
   void _refresh() => setState(() {});
 
@@ -366,6 +507,8 @@ class _MainScaffoldState extends State<MainScaffold> {
       HomeScreen(
         state: widget.state,
         onNavigateToRedeem: () => setState(() => _index = 2),
+        unreadNotificationCount: _unreadNotificationCount,
+        onOpenNotifications: _openNotifications,
       ),
       RewardsScreen(state: widget.state),
       RedeemScreen(state: widget.state, onRedeem: _refresh),

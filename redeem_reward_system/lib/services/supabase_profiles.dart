@@ -121,34 +121,16 @@ class SupabaseProfilesService {
     }
   }
 
-  Future<void> updatePoints({
-    required String userId,
-    required int points,
-  }) async {
-    try {
-      await _client
-          .from('profiles')
-          .update({'points': points})
-          .eq('id', userId);
-    } catch (error) {
-      debugPrint('Failed to update points for $userId: $error');
-      rethrow;
+  Future<int> redeemReward(String rewardId) async {
+    final result = await _client.rpc(
+      'redeem_reward',
+      params: {'p_reward_id': rewardId},
+    );
+    if (result is Map) {
+      final points = int.tryParse(result['points']?.toString() ?? '');
+      if (points != null) return points;
     }
-  }
-
-  Future<void> persistRedemption({
-    required String userId,
-    required int points,
-    required String rewardName,
-    required int pointsSpent,
-  }) async {
-    await updatePoints(userId: userId, points: points);
-    await _client.from('transactions').insert({
-      'user_id': userId,
-      'reward_name': rewardName,
-      'points_spent': pointsSpent,
-      'transaction_type': 'redemption',
-    });
+    throw const FormatException('The reward service returned no point balance.');
   }
 
   Future<List<AppTransaction>> getRecentTransactions({

@@ -142,12 +142,34 @@ class OrderHistoryService {
     if (search.trim().isNotEmpty) {
       query = query.ilike('order_code', '%${search.trim()}%');
     }
+
     final rows = await query
         .order('created_at', ascending: false)
         .range(offset, offset + limit - 1);
     return (rows as List<dynamic>)
         .map((row) => OrderHistoryEntry.fromMap(Map<String, dynamic>.from(row)))
         .toList();
+  }
+
+  Future<int> getPendingOrderCount() async {
+    final result = await _client.rpc('get_pending_order_count');
+    final count = int.tryParse(result.toString());
+    if (count == null) {
+      throw const FormatException('The pending order count was invalid.');
+    }
+    return count;
+  }
+
+  Future<OrderHistoryEntry?> getOrderById(String orderId) async {
+    final row = await _client
+        .from('orders')
+        .select(
+          'id, user_id, order_code, total, status, points_earned, created_at, items, order_items(id, deal_id, deal_name, deal_category, unit_price, quantity)',
+        )
+        .eq('id', orderId)
+        .maybeSingle();
+    if (row == null) return null;
+    return OrderHistoryEntry.fromMap(Map<String, dynamic>.from(row));
   }
 
   Future<Map<String, dynamic>> updateOrderStatus({

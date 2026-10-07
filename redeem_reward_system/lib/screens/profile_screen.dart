@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import '../app_state.dart';
 import 'edit_profile_screen.dart';
+import 'password_update_screen.dart';
 
 class ProfileScreen extends StatelessWidget {
   final AppState state;
@@ -199,45 +200,33 @@ class ProfileScreen extends StatelessWidget {
   }
 
   void _showChangePasswordDialog(BuildContext context) {
-    final currentCtrl = TextEditingController();
-    final newCtrl = TextEditingController();
-    final confirmCtrl = TextEditingController();
-
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text(
           'Change Password',
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _PasswordField(controller: currentCtrl, label: 'Current Password'),
-            const SizedBox(height: 12),
-            _PasswordField(controller: newCtrl, label: 'New Password'),
-            const SizedBox(height: 12),
-            _PasswordField(
-              controller: confirmCtrl,
-              label: 'Confirm New Password',
-            ),
-          ],
+        content: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: 420,
+            maxHeight: MediaQuery.sizeOf(dialogContext).height * 0.7,
+          ),
+          child: PasswordUpdateForm(
+            email: state.user.email,
+            displayName: state.user.name,
+            requireCurrentPassword: true,
+            onSuccess: () async {
+              if (dialogContext.mounted) Navigator.pop(dialogContext);
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Password updated successfully.')),
+                );
+              }
+            },
+          ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF3E2723),
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Update'),
-          ),
-        ],
       ),
     );
   }
@@ -401,36 +390,6 @@ class _ActionButton extends StatelessWidget {
             const Spacer(),
             Icon(Icons.chevron_right, color: Colors.grey[400], size: 20),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class _PasswordField extends StatefulWidget {
-  final TextEditingController controller;
-  final String label;
-
-  const _PasswordField({required this.controller, required this.label});
-
-  @override
-  State<_PasswordField> createState() => _PasswordFieldState();
-}
-
-class _PasswordFieldState extends State<_PasswordField> {
-  bool _obscure = true;
-
-  @override
-  Widget build(BuildContext context) {
-    return TextField(
-      controller: widget.controller,
-      obscureText: _obscure,
-      decoration: InputDecoration(
-        labelText: widget.label,
-        border: const OutlineInputBorder(),
-        suffixIcon: IconButton(
-          icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility),
-          onPressed: () => setState(() => _obscure = !_obscure),
         ),
       ),
     );
