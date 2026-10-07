@@ -7,6 +7,7 @@ import '../services/order_history_service.dart';
 import '../services/orders_service.dart';
 import '../services/payment_method.dart';
 import '../services/supabase_profiles.dart';
+import '../widgets/order_summary_card.dart';
 import 'order_receipt_screen.dart';
 
 typedef CheckoutDealLoader =
@@ -109,7 +110,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   bool get _valid {
     if (_refreshing || _refreshError != null || _cart.isEmpty ||
-        _cart.hasUnavailableItems) {
+        _cart.hasUnavailableItems ||
+        _cart.hasUnresolvedPriceChanges) {
       return false;
     }
     if (_method != PaymentMethod.cash) return true;
@@ -282,53 +284,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   _notice(_priceNotice!),
                   const SizedBox(height: 14),
                 ],
-                _section(
-                  title: 'Order summary',
-                  child: Column(
-                    children: [
-                      ..._cart.items.map(
-                        (item) => Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 8),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      '${item.quantity}x ${item.name}',
-                                      style: const TextStyle(
-                                        color: Color(0xFF3E2723),
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    Text(
-                                      '${formatPeso(item.unitPrice)} each',
-                                      style: const TextStyle(
-                                        color: Color(0xFF8D6E63),
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Text(
-                                formatPeso(item.lineTotal),
-                                style: const TextStyle(
-                                  color: Color(0xFF3E2723),
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const Divider(),
-                      _priceLine('Subtotal', _cart.subtotal),
-                      _priceLine('Total', _cart.subtotal, bold: true),
-                    ],
-                  ),
+                OrderSummaryCard(
+                  items: _cart.items,
+                  subtotal: _cart.subtotal,
+                  paymentMethod: _method.label,
+                  pointsToEarn: (_cart.subtotal / 100).floor() * 10,
+                  onAcceptUpdatedPrices: _cart.acceptUpdatedPrices,
                 ),
                 const SizedBox(height: 16),
                 _section(
@@ -491,31 +452,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         ),
         const SizedBox(height: 12),
         child,
-      ],
-    ),
-  );
-
-  Widget _priceLine(String title, double value, {bool bold = false}) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 3),
-    child: Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          title,
-          style: TextStyle(
-            color: const Color(0xFF3E2723),
-            fontSize: bold ? 17 : 14,
-            fontWeight: bold ? FontWeight.bold : FontWeight.normal,
-          ),
-        ),
-        Text(
-          formatPeso(value),
-          style: TextStyle(
-            color: const Color(0xFF3E2723),
-            fontSize: bold ? 19 : 14,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
       ],
     ),
   );

@@ -7,8 +7,28 @@ BEGIN;
 ALTER TABLE public.profiles
   ADD COLUMN IF NOT EXISTS notification_preferences JSONB NOT NULL
     DEFAULT '{"orders":true,"promotions":true,"streaks":true}'::JSONB,
+  ADD COLUMN IF NOT EXISTS lifetime_points INT NOT NULL DEFAULT 0,
   ADD COLUMN IF NOT EXISTS last_streak_ready_claimed_at TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS last_streak_reminder_claimed_at TIMESTAMPTZ;
+
+UPDATE public.profiles AS profile
+SET lifetime_points = GREATEST(
+  COALESCE(profile.lifetime_points, 0)::BIGINT,
+  COALESCE(profile.points, 0)::BIGINT,
+  COALESCE((
+    SELECT SUM(
+      COALESCE(NULLIF(ABS(transaction_row.points), 0), transaction_row.points_spent, 0)
+    )
+    FROM public.transactions AS transaction_row
+    WHERE transaction_row.user_id = profile.id
+      AND transaction_row.transaction_type = 'earned'
+  ), 0)
+  + COALESCE((
+    SELECT SUM(daily_reward.reward_points)
+    FROM public.daily_rewards AS daily_reward
+    WHERE daily_reward.user_id = profile.id
+  ), 0)
+)::INT;
 
 UPDATE public.profiles
 SET notification_preferences =
@@ -54,6 +74,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS notifications_streak_cycle_dedupe_idx
     (data ->> 'kind')
   )
   WHERE type = 'streak_ready';
+
+CREATE INDEX IF NOT EXISTS transactions_user_type_created_idx
+  ON public.transactions (user_id, transaction_type, created_at DESC);
+CREATE INDEX IF NOT EXISTS daily_rewards_user_claimed_idx
+  ON public.daily_rewards (user_id, claimed_at DESC);
 
 -- Promo notifications are produced by a trigger so direct admin writes and
 -- future server-side writes share the same one-time behavior.
@@ -303,6 +328,166 @@ $$;
 REVOKE ALL ON FUNCTION public.get_points_history_summary(TEXT)
   FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.get_points_history_summary(TEXT)
+  TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.get_points_overview(
+  p_period TEXT DEFAULT 'week'
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+STABLE
+SECURITY INVOKER
+SET search_path = public
+AS $$
+DECLARE
+  current_user_id UUID := auth.uid();
+  current_balance BIGINT;
+  lifetime_earned BIGINT;
+  redeemed_total BIGINT;
+  earned_current_month BIGINT;
+  earned_previous_month BIGINT;
+  local_now TIMESTAMP := now() AT TIME ZONE 'Asia/Manila';
+  month_start TIMESTAMP;
+  bucket_start TIMESTAMP;
+  bucket_interval INTERVAL;
+  buckets JSONB;
+BEGIN
+  IF current_user_id IS NULL THEN
+    RAISE EXCEPTION 'AUTH_REQUIRED' USING ERRCODE = '42501';
+  END IF;
+  IF p_period IS NULL OR p_period NOT IN ('week', 'month') THEN
+    RAISE EXCEPTION 'POINTS_PERIOD_INVALID';
+  END IF;
+
+  SELECT p.points, p.lifetime_points
+  INTO current_balance, lifetime_earned
+  FROM public.profiles AS p
+  WHERE p.id = current_user_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'PROFILE_NOT_FOUND';
+  END IF;
+
+  month_start := date_trunc('month', local_now);
+  bucket_interval := CASE
+    WHEN p_period = 'week' THEN INTERVAL '1 week'
+    ELSE INTERVAL '1 month'
+  END;
+  bucket_start := CASE
+    WHEN p_period = 'week' THEN date_trunc('week', local_now)
+    ELSE month_start
+  END;
+
+  WITH earned_events AS (
+    SELECT
+      t.created_at AT TIME ZONE 'Asia/Manila' AS event_time,
+      COALESCE(NULLIF(ABS(t.points), 0), t.points_spent)::BIGINT AS points
+    FROM public.transactions AS t
+    WHERE t.user_id = current_user_id
+      AND t.transaction_type = 'earned'
+    UNION ALL
+    SELECT
+      dr.claimed_at AT TIME ZONE 'Asia/Manila',
+      dr.reward_points::BIGINT
+    FROM public.daily_rewards AS dr
+    WHERE dr.user_id = current_user_id
+  ),
+  redeemed_events AS (
+    SELECT
+      t.created_at AT TIME ZONE 'Asia/Manila' AS event_time,
+      COALESCE(NULLIF(ABS(t.points), 0), t.points_spent)::BIGINT AS points
+    FROM public.transactions AS t
+    WHERE t.user_id = current_user_id
+      AND t.transaction_type IN ('redemption', 'redeemed')
+  )
+  SELECT
+    COALESCE((
+      SELECT SUM(event.points)
+      FROM redeemed_events AS event
+    ), 0)::BIGINT,
+    COALESCE((
+      SELECT SUM(event.points)
+      FROM earned_events AS event
+      WHERE event.event_time >= month_start
+        AND event.event_time < month_start + INTERVAL '1 month'
+    ), 0)::BIGINT,
+    COALESCE((
+      SELECT SUM(event.points)
+      FROM earned_events AS event
+      WHERE event.event_time >= month_start - INTERVAL '1 month'
+        AND event.event_time < month_start
+    ), 0)::BIGINT
+  INTO redeemed_total, earned_current_month, earned_previous_month;
+
+  WITH earned_events AS (
+    SELECT
+      t.created_at AT TIME ZONE 'Asia/Manila' AS event_time,
+      COALESCE(NULLIF(ABS(t.points), 0), t.points_spent)::BIGINT AS points
+    FROM public.transactions AS t
+    WHERE t.user_id = current_user_id
+      AND t.transaction_type = 'earned'
+    UNION ALL
+    SELECT
+      dr.claimed_at AT TIME ZONE 'Asia/Manila',
+      dr.reward_points::BIGINT
+    FROM public.daily_rewards AS dr
+    WHERE dr.user_id = current_user_id
+  ),
+  redeemed_events AS (
+    SELECT
+      t.created_at AT TIME ZONE 'Asia/Manila' AS event_time,
+      COALESCE(NULLIF(ABS(t.points), 0), t.points_spent)::BIGINT AS points
+    FROM public.transactions AS t
+    WHERE t.user_id = current_user_id
+      AND t.transaction_type IN ('redemption', 'redeemed')
+  ),
+  bucket_windows AS (
+    SELECT
+      series.bucket_number,
+      bucket_start - ((5 - series.bucket_number) * bucket_interval) AS starts_at
+    FROM generate_series(0, 5) AS series(bucket_number)
+  )
+  SELECT jsonb_agg(
+    jsonb_build_object(
+      'label',
+      CASE WHEN p_period = 'week'
+        THEN to_char(bucket.starts_at, 'Mon FMDD')
+        ELSE to_char(bucket.starts_at, 'Mon')
+      END,
+      'earned',
+      COALESCE((
+        SELECT SUM(event.points)
+        FROM earned_events AS event
+        WHERE event.event_time >= bucket.starts_at
+          AND event.event_time < bucket.starts_at + bucket_interval
+      ), 0),
+      'redeemed',
+      COALESCE((
+        SELECT SUM(event.points)
+        FROM redeemed_events AS event
+        WHERE event.event_time >= bucket.starts_at
+          AND event.event_time < bucket.starts_at + bucket_interval
+      ), 0)
+    )
+    ORDER BY bucket.bucket_number
+  )
+  INTO buckets
+  FROM bucket_windows AS bucket;
+
+  RETURN jsonb_build_object(
+    'balance', COALESCE(current_balance, 0),
+    'lifetime_earned', COALESCE(lifetime_earned, 0),
+    'total_redeemed', redeemed_total,
+    'earned_this_month', earned_current_month,
+    'earned_last_month', earned_previous_month,
+    'buckets', COALESCE(buckets, '[]'::JSONB)
+  );
+END;
+$$;
+
+ALTER FUNCTION public.get_points_overview(TEXT) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.get_points_overview(TEXT)
+  FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.get_points_overview(TEXT)
   TO authenticated;
 
 CREATE OR REPLACE FUNCTION public.redeem_reward(p_reward_id UUID)

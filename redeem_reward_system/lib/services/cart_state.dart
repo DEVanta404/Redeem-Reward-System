@@ -9,6 +9,7 @@ class CartItem {
   final int quantity;
   final double unitPrice;
   final bool isAvailable;
+  final double? previousUnitPrice;
 
   const CartItem({
     required this.id,
@@ -17,6 +18,7 @@ class CartItem {
     required this.quantity,
     required this.unitPrice,
     this.isAvailable = true,
+    this.previousUnitPrice,
   });
 
   double get lineTotal => unitPrice * quantity;
@@ -27,6 +29,8 @@ class CartItem {
     int? quantity,
     double? unitPrice,
     bool? isAvailable,
+    double? previousUnitPrice,
+    bool clearPreviousUnitPrice = false,
   }) => CartItem(
     id: id,
     name: name ?? this.name,
@@ -34,6 +38,9 @@ class CartItem {
     quantity: quantity ?? this.quantity,
     unitPrice: unitPrice ?? this.unitPrice,
     isAvailable: isAvailable ?? this.isAvailable,
+    previousUnitPrice: clearPreviousUnitPrice
+        ? null
+        : previousUnitPrice ?? this.previousUnitPrice,
   );
 }
 
@@ -50,6 +57,8 @@ class CartState extends ChangeNotifier {
       _items.values.fold(0, (total, item) => total + item.lineTotal);
   bool get hasUnavailableItems =>
       _items.values.any((item) => !item.isAvailable);
+  bool get hasUnresolvedPriceChanges =>
+      _items.values.any((item) => item.previousUnitPrice != null);
 
   bool add(DealItem deal) {
     final current = _items[deal.id];
@@ -95,6 +104,9 @@ class CartState extends ChangeNotifier {
           category: deal.category,
           unitPrice: deal.price,
           isAvailable: deal.isActive,
+          previousUnitPrice: current.unitPrice != deal.price
+              ? current.previousUnitPrice ?? current.unitPrice
+              : current.previousUnitPrice,
         );
         changed = true;
       }
@@ -120,6 +132,16 @@ class CartState extends ChangeNotifier {
 
   void remove(String id) {
     if (_items.remove(id) != null) notifyListeners();
+  }
+
+  void acceptUpdatedPrices() {
+    if (!hasUnresolvedPriceChanges) return;
+    for (final entry in _items.entries.toList()) {
+      if (entry.value.previousUnitPrice != null) {
+        _items[entry.key] = entry.value.copyWith(clearPreviousUnitPrice: true);
+      }
+    }
+    notifyListeners();
   }
 
   void clear() {

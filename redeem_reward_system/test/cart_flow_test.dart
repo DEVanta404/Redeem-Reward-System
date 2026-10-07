@@ -69,16 +69,25 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Your Cart'), findsOneWidget);
-    expect(find.text('Special Drinks'), findsOneWidget);
+    expect(find.text('Brown Sugar Oat Latte'), findsOneWidget);
     expect(find.widgetWithText(FilledButton, 'Place order'), findsOneWidget);
-    expect(find.text('₱100.00 each · ₱100.00'), findsOneWidget);
+    expect(find.text('x1 · ₱100.00 each'), findsOneWidget);
 
     state.deals = state.deals
         .map((deal) => deal.id == latteId ? deal.copyWith(price: 120) : deal)
         .toList();
     dealEvents.add(state.deals);
     await tester.pump();
-    expect(find.text('₱120.00 each · ₱120.00'), findsOneWidget);
+    expect(
+      find.text('Price updated from ₱100.00 to ₱120.00'),
+      findsOneWidget,
+    );
+    expect(
+      tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Place order')).onPressed,
+      isNull,
+    );
+    await tester.tap(find.text('Use updated prices'));
+    await tester.pump();
 
     await tester.tap(find.byTooltip('Increase quantity'));
     await tester.pump();
@@ -91,7 +100,7 @@ void main() {
 
     expect(find.text('Checkout'), findsOneWidget);
     expect(find.text('Order summary'), findsOneWidget);
-    expect(find.text('Cash'), findsOneWidget);
+    expect(find.text('Cash'), findsNWidgets(2));
     expect(find.text('GCash'), findsOneWidget);
     expect(find.text('Maya'), findsOneWidget);
     expect(find.text('Card'), findsOneWidget);
@@ -147,7 +156,7 @@ void main() {
       ),
     );
 
-    expect(find.text('Your cart is empty'), findsOneWidget);
+    expect(find.text('Your order is empty'), findsOneWidget);
     expect(find.text('Back to Deals'), findsOneWidget);
     final placeOrder = tester.widget<FilledButton>(
       find.widgetWithText(FilledButton, 'Place order'),

@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../app_state.dart';
+import '../services/points_overview_service.dart';
 import '../services/supabase_profiles.dart';
+import '../widgets/points_overview_card.dart';
 import 'points_history_screen.dart';
 import 'promo_section.dart';
 
@@ -24,8 +26,13 @@ class RewardsScreen extends StatefulWidget {
 }
 
 class _RewardsScreenState extends State<RewardsScreen> {
+  final _overviewService = PointsOverviewService();
   RealtimeChannel? _transactionsChannel;
   String? _subscribedUserId;
+  PointsOverview? _overview;
+  PointsChartPeriod _chartPeriod = PointsChartPeriod.week;
+  bool _overviewLoading = true;
+  Object? _overviewError;
 
   AppState get state => widget.state;
 
@@ -33,18 +40,26 @@ class _RewardsScreenState extends State<RewardsScreen> {
   void initState() {
     super.initState();
     _subscribeToTransactions();
-    if (widget.isActive) unawaited(_refreshTransactions());
+    if (widget.isActive) unawaited(_refreshAll());
   }
 
   @override
   void didUpdateWidget(covariant RewardsScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.state.user.id != widget.state.user.id) {
+    final userChanged = oldWidget.state.user.id != widget.state.user.id;
+    if (userChanged) {
       _removeTransactionsSubscription();
+      state.transactions = [];
+      _overview = null;
+      _overviewError = null;
+      _overviewLoading = true;
       _subscribeToTransactions();
+      if (widget.isActive) {
+        unawaited(_refreshAll());
+      }
     }
-    if (widget.isActive && !oldWidget.isActive) {
-      unawaited(_refreshTransactions());
+    if (!userChanged && widget.isActive && !oldWidget.isActive) {
+      unawaited(_refreshAll());
     }
   }
 
@@ -69,7 +84,7 @@ class _RewardsScreenState extends State<RewardsScreen> {
             column: 'user_id',
             value: userId,
           ),
-          callback: (_) => unawaited(_refreshTransactions()),
+          callback: (_) => unawaited(_refreshAll()),
         )
         .subscribe();
   }
@@ -81,6 +96,52 @@ class _RewardsScreenState extends State<RewardsScreen> {
     if (channel != null) {
       unawaited(Supabase.instance.client.removeChannel(channel));
     }
+  }
+
+  Future<void> _refreshAll() async {
+    await Future.wait([_refreshTransactions(), _loadOverview()]);
+  }
+
+  Future<void> _loadOverview() async {
+    if (state.user.id.isEmpty || state.user.id != _subscribedUserId) {
+      if (mounted) {
+        setState(() {
+          _overview = null;
+          _overviewLoading = false;
+        });
+      }
+      return;
+    }
+    if (mounted) {
+      setState(() {
+        _overviewLoading = true;
+        _overviewError = null;
+      });
+    }
+    try {
+      final overview = await _overviewService.load(period: _chartPeriod);
+      if (!mounted || state.user.id != _subscribedUserId) return;
+      state.points = overview.balance;
+      state.lifetimePoints = overview.lifetimeEarned;
+      setState(() {
+        _overview = overview;
+        _overviewLoading = false;
+        _overviewError = null;
+      });
+    } catch (error) {
+      debugPrint('Failed to load points overview: $error');
+      if (!mounted) return;
+      setState(() {
+        _overviewLoading = false;
+        _overviewError = error;
+      });
+    }
+  }
+
+  Future<void> _changeChartPeriod(PointsChartPeriod period) async {
+    if (period == _chartPeriod) return;
+    setState(() => _chartPeriod = period);
+    await _loadOverview();
   }
 
   Future<void> _refreshTransactions() async {
@@ -105,17 +166,6 @@ class _RewardsScreenState extends State<RewardsScreen> {
     }
   }
 
-  Color get _membershipColor {
-    switch (state.membership) {
-      case 'Gold':
-        return const Color(0xFFFFA000);
-      case 'Silver':
-        return const Color(0xFF9E9E9E);
-      default:
-        return const Color(0xFF795548);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final recent = state.transactions.take(3).toList();
@@ -134,188 +184,141 @@ class _RewardsScreenState extends State<RewardsScreen> {
         elevation: 0,
         centerTitle: false,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // ── Summary card ────────────────────────────────────────
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF3E2723), Color(0xFF5D4037)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
+      body: RefreshIndicator(
+        onRefresh: _refreshAll,
+        color: const Color(0xFF3E2723),
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _MembershipTiers(lifetimePoints: state.lifetimePoints),
+              const SizedBox(height: 16),
+              if (_overviewLoading && _overview == null)
+                const _PointsOverviewLoading()
+              else if (_overviewError != null && _overview == null)
+                _PointsOverviewError(onRetry: _loadOverview)
+              else if (_overview != null)
+                PointsOverviewCard(
+                  overview: _overview!,
+                  period: _chartPeriod,
+                  onPeriodChanged: _changeChartPeriod,
+                  onViewHistory:
+                      widget.onSeeAll ??
+                      () => Navigator.of(context).push<void>(
+                        MaterialPageRoute<void>(
+                          builder: (_) => const PointsHistoryScreen(),
+                        ),
+                      ),
                 ),
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF3E2723).withValues(alpha: 0.3),
-                    blurRadius: 12,
-                    offset: const Offset(0, 6),
-                  ),
-                ],
-              ),
-              child: Row(
+              const SizedBox(height: 16),
+
+              PromoSection(promotions: state.promotions),
+              const SizedBox(height: 16),
+
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Current Points',
-                          style: TextStyle(color: Colors.white60, fontSize: 12),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '${state.points}',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 40,
-                            fontWeight: FontWeight.bold,
-                            height: 1.1,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            const Icon(
-                              Icons.arrow_upward,
-                              color: Color(0xFF80CBC4),
-                              size: 14,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              '+${state.pointsEarnedToday} Today',
-                              style: const TextStyle(
-                                color: Color(0xFF80CBC4),
-                                fontSize: 13,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
+                  const Text(
+                    'Recent Activity',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF3E2723),
                     ),
                   ),
-                  Container(
-                    width: 1,
-                    height: 80,
-                    color: Colors.white24,
-                    margin: const EdgeInsets.symmetric(horizontal: 20),
-                  ),
-                  Column(
-                    children: [
-                      const Text(
-                        'Membership',
-                        style: TextStyle(color: Colors.white60, fontSize: 12),
+                  if (recent.isNotEmpty)
+                    TextButton(
+                      onPressed:
+                          widget.onSeeAll ??
+                          () => Navigator.of(context).push<void>(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const PointsHistoryScreen(),
+                            ),
+                          ),
+                      style: TextButton.styleFrom(
+                        foregroundColor: const Color(0xFF8D6E63),
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
-                      const SizedBox(height: 8),
-                      Icon(
-                        Icons.workspace_premium,
-                        color: _membershipColor,
-                        size: 32,
+                      child: const Text(
+                        'See all',
+                        style: TextStyle(fontWeight: FontWeight.w600),
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        state.membership,
-                        style: TextStyle(
-                          color: _membershipColor,
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
                 ],
               ),
-            ),
-            const SizedBox(height: 24),
-
-            // ── Membership Tiers ─────────────────────────────────────
-            _MembershipTiers(lifetimePoints: state.lifetimePoints),
-            const SizedBox(height: 24),
-
-            PromoSection(promotions: state.promotions),
-            const SizedBox(height: 12),
-
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Recent Activity',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF3E2723),
-                  ),
-                ),
-                if (recent.isNotEmpty)
-                  TextButton(
-                    onPressed: widget.onSeeAll ??
-                        () => Navigator.of(context).push<void>(
-                          MaterialPageRoute<void>(
-                            builder: (_) => const PointsHistoryScreen(),
-                          ),
-                        ),
-                    style: TextButton.styleFrom(
-                      foregroundColor: const Color(0xFF8D6E63),
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    child: const Text(
-                      'See all',
-                      style: TextStyle(fontWeight: FontWeight.w600),
+              const SizedBox(height: 12),
+              if (recent.isEmpty)
+                Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      'No activity yet.',
+                      style: TextStyle(color: Colors.grey[500]),
                     ),
                   ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            if (recent.isEmpty)
-              Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Text(
-                    'No activity yet.',
-                    style: TextStyle(color: Colors.grey[500]),
-                  ),
                 ),
-              )
-            else
-              ...recent.map((t) => _TransactionTile(transaction: t)),
-          ],
+              if (recent.isNotEmpty)
+                ...recent.map((t) => _TransactionTile(transaction: t)),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-// ─── Membership Tiers Widget ─────────────────────────────────────────────────
+class _PointsOverviewLoading extends StatelessWidget {
+  const _PointsOverviewLoading();
 
-class _TierData {
-  final String name;
-  final int minPoints;
-  final Color color;
-  const _TierData(this.name, this.minPoints, this.color);
+  @override
+  Widget build(BuildContext context) => Container(
+    height: 116,
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(18),
+    ),
+    alignment: Alignment.center,
+    child: const CircularProgressIndicator(color: Color(0xFF3E2723)),
+  );
 }
+
+class _PointsOverviewError extends StatelessWidget {
+  final VoidCallback onRetry;
+
+  const _PointsOverviewError({required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(18),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(18),
+    ),
+    child: Column(
+      children: [
+        const Text(
+          'Points overview could not be loaded.',
+          style: TextStyle(color: Color(0xFF5D4037)),
+        ),
+        TextButton(onPressed: onRetry, child: const Text('Try again')),
+      ],
+    ),
+  );
+}
+
+// ─── Membership Tiers Widget ─────────────────────────────────────────────────
 
 class _MembershipTiers extends StatelessWidget {
   final int lifetimePoints;
   const _MembershipTiers({required this.lifetimePoints});
 
-  static const _tiers = [
-    _TierData('Bronze', 0, Color(0xFF795548)),
-    _TierData('Silver', 500, Color(0xFF9E9E9E)),
-    _TierData('Gold', 1000, Color(0xFFFFA000)),
-  ];
-
-  String get _currentTierName {
-    if (lifetimePoints >= 1000) return 'Gold';
-    if (lifetimePoints >= 500) return 'Silver';
-    return 'Bronze';
-  }
+  String get _currentTierName =>
+      MembershipTier.forLifetimePoints(lifetimePoints).name;
 
   @override
   Widget build(BuildContext context) {
@@ -345,8 +348,8 @@ class _MembershipTiers extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           Row(
-            children: _tiers.map((tier) {
-              final isReached = lifetimePoints >= tier.minPoints;
+            children: MembershipTier.values.map((tier) {
+              final isReached = lifetimePoints >= tier.minimumLifetimePoints;
               final isCurrent = tier.name == _currentTierName;
               return Expanded(
                 child: Column(
@@ -381,7 +384,7 @@ class _MembershipTiers extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      '${tier.minPoints}+ pts',
+                      '${tier.minimumLifetimePoints}+ pts',
                       style: TextStyle(fontSize: 10, color: Colors.grey[500]),
                     ),
                   ],
@@ -421,8 +424,7 @@ class _TransactionTile extends StatelessWidget {
     final isEarned = transaction.points > 0;
     final color = isEarned ? const Color(0xFF2E7D32) : const Color(0xFFC62828);
     final date = transaction.date.toUtc().add(const Duration(hours: 8));
-    final dateStr =
-        '${_months[date.month - 1]} ${date.day}';
+    final dateStr = '${_months[date.month - 1]} ${date.day}';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),

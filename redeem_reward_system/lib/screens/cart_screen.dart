@@ -5,10 +5,10 @@ import 'package:provider/provider.dart';
 
 import '../app_state.dart';
 import '../services/cart_state.dart';
-import '../services/currency_formatter.dart';
 import '../services/orders_service.dart';
 import '../services/supabase_profiles.dart';
 import 'checkout_screen.dart';
+import '../widgets/order_summary_card.dart';
 
 class CartScreen extends StatefulWidget {
   final AppState state;
@@ -123,19 +123,19 @@ class _CartScreenState extends State<CartScreen> {
           Expanded(
             child: cart.isEmpty
                 ? _buildEmptyCart(context)
-                : ListView.separated(
+                : ListView(
                     padding: const EdgeInsets.fromLTRB(18, 8, 18, 20),
-                    itemCount: cart.items.length,
-                    separatorBuilder: (_, index) => const SizedBox(height: 12),
-                    itemBuilder: (context, index) {
-                      final item = cart.items[index];
-                      return _CartItemTile(
-                        item: item,
-                        onDecrement: () => cart.decrement(item.id),
-                        onIncrement: () => cart.increment(item.id),
-                        onRemove: () => cart.remove(item.id),
-                      );
-                    },
+                    children: [
+                      OrderSummaryCard(
+                        items: cart.items,
+                        subtotal: cart.subtotal,
+                        readOnly: false,
+                        onIncrement: cart.increment,
+                        onDecrement: cart.decrement,
+                        onRemove: cart.remove,
+                        onAcceptUpdatedPrices: cart.acceptUpdatedPrices,
+                      ),
+                    ],
                   ),
           ),
         ],
@@ -145,36 +145,26 @@ class _CartScreenState extends State<CartScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (!cart.isEmpty) ...[
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Subtotal',
-                    style: TextStyle(
-                      color: Color(0xFF6D5B53),
-                      fontWeight: FontWeight.w600,
-                    ),
+            if (cart.hasUnresolvedPriceChanges && !cart.isEmpty)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 8),
+                child: Text(
+                  'Accept the updated prices above to continue.',
+                  style: TextStyle(
+                    color: Color(0xFF8D6E35),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
                   ),
-                  Text(
-                    formatPeso(cart.subtotal),
-                    style: const TextStyle(
-                      color: Color(0xFF3E2723),
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
+                ),
               ),
-              const SizedBox(height: 10),
-            ],
             FilledButton.icon(
               onPressed:
                   cart.isEmpty ||
                       _isPlacingOrder ||
                       _refreshingDeals ||
                       _dealRefreshError != null ||
-                      cart.hasUnavailableItems
+                      cart.hasUnavailableItems ||
+                      cart.hasUnresolvedPriceChanges
                   ? null
                   : () => _placeOrder(context, cart),
               icon: const Icon(Icons.qr_code_2),
@@ -206,7 +196,7 @@ class _CartScreenState extends State<CartScreen> {
             ),
             const SizedBox(height: 14),
             const Text(
-              'Your cart is empty',
+              'Your order is empty',
               style: TextStyle(
                 color: Color(0xFF3E2723),
                 fontSize: 18,
@@ -264,120 +254,9 @@ class _CartScreenState extends State<CartScreen> {
           ),
         ),
       );
-      if (placed == true && mounted) Navigator.of(context).pop();
+      if (placed == true && context.mounted) Navigator.of(context).pop();
     } finally {
       if (mounted) setState(() => _isPlacingOrder = false);
     }
-  }
-}
-
-class _CartItemTile extends StatelessWidget {
-  final CartItem item;
-  final VoidCallback onDecrement;
-  final VoidCallback onIncrement;
-  final VoidCallback onRemove;
-
-  const _CartItemTile({
-    required this.item,
-    required this.onDecrement,
-    required this.onIncrement,
-    required this.onRemove,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  item.name,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xFF3E2723),
-                    fontSize: 15,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  item.category,
-                  style: const TextStyle(
-                    color: Color(0xFF8D6E63),
-                    fontSize: 12,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '${formatPeso(item.unitPrice)} each · ${formatPeso(item.lineTotal)}',
-                  style: const TextStyle(
-                    color: Color(0xFF5D4037),
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                if (!item.isAvailable) ...[
-                  const SizedBox(height: 4),
-                  const Text(
-                    'Unavailable. Remove to continue.',
-                    style: TextStyle(
-                      color: Color(0xFFC62828),
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          IconButton(
-            tooltip: 'Decrease quantity',
-            onPressed: item.quantity > 1 ? onDecrement : null,
-            icon: const Icon(Icons.remove_circle_outline),
-            color: const Color(0xFF5D4037),
-            visualDensity: VisualDensity.compact,
-          ),
-          Text(
-            '${item.quantity}',
-            style: const TextStyle(
-              color: Color(0xFF3E2723),
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          IconButton(
-            tooltip: 'Increase quantity',
-            onPressed: item.quantity < CartState.maxQuantity
-                ? onIncrement
-                : null,
-            icon: const Icon(Icons.add_circle_outline),
-            color: const Color(0xFF5D4037),
-            visualDensity: VisualDensity.compact,
-          ),
-          IconButton(
-            tooltip: 'Remove ${item.name}',
-            onPressed: onRemove,
-            icon: const Icon(Icons.delete_outline),
-            color: const Color(0xFF9E4D3D),
-            visualDensity: VisualDensity.compact,
-          ),
-        ],
-      ),
-    );
   }
 }

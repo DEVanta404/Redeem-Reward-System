@@ -1,6 +1,43 @@
 import 'package:flutter/material.dart';
 import 'services/supabase_profiles.dart';
 
+class MembershipTier {
+  final String name;
+  final int minimumLifetimePoints;
+  final Color color;
+
+  const MembershipTier({
+    required this.name,
+    required this.minimumLifetimePoints,
+    required this.color,
+  });
+
+  static const List<MembershipTier> values = [
+    MembershipTier(
+      name: 'Bronze',
+      minimumLifetimePoints: 0,
+      color: Color(0xFF795548),
+    ),
+    MembershipTier(
+      name: 'Silver',
+      minimumLifetimePoints: 500,
+      color: Color(0xFF9E9E9E),
+    ),
+    MembershipTier(
+      name: 'Gold',
+      minimumLifetimePoints: 1000,
+      color: Color(0xFFFFA000),
+    ),
+  ];
+
+  static MembershipTier forLifetimePoints(int lifetimePoints) {
+    for (final tier in values.reversed) {
+      if (lifetimePoints >= tier.minimumLifetimePoints) return tier;
+    }
+    return values.first;
+  }
+}
+
 class UserProfile {
   String id;
   String name;
@@ -789,11 +826,7 @@ class AppState {
 
   bool get isAdmin => user.isAdmin;
 
-  String get membership {
-    if (lifetimePoints >= 1000) return 'Gold';
-    if (lifetimePoints >= 500) return 'Silver';
-    return 'Bronze';
-  }
+  String get membership => MembershipTier.forLifetimePoints(lifetimePoints).name;
 
   bool get isLuckyDay => dailyRewardStreak % 7 == 0;
 
