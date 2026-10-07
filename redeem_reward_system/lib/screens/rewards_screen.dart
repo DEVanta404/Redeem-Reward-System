@@ -1,11 +1,109 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../app_state.dart';
+import '../services/supabase_profiles.dart';
+import 'points_history_screen.dart';
 import 'promo_section.dart';
 
-class RewardsScreen extends StatelessWidget {
+class RewardsScreen extends StatefulWidget {
   final AppState state;
+  final bool isActive;
+  final VoidCallback? onSeeAll;
 
-  const RewardsScreen({super.key, required this.state});
+  const RewardsScreen({
+    super.key,
+    required this.state,
+    this.isActive = true,
+    this.onSeeAll,
+  });
+
+  @override
+  State<RewardsScreen> createState() => _RewardsScreenState();
+}
+
+class _RewardsScreenState extends State<RewardsScreen> {
+  RealtimeChannel? _transactionsChannel;
+  String? _subscribedUserId;
+
+  AppState get state => widget.state;
+
+  @override
+  void initState() {
+    super.initState();
+    _subscribeToTransactions();
+    if (widget.isActive) unawaited(_refreshTransactions());
+  }
+
+  @override
+  void didUpdateWidget(covariant RewardsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.state.user.id != widget.state.user.id) {
+      _removeTransactionsSubscription();
+      _subscribeToTransactions();
+    }
+    if (widget.isActive && !oldWidget.isActive) {
+      unawaited(_refreshTransactions());
+    }
+  }
+
+  @override
+  void dispose() {
+    _removeTransactionsSubscription();
+    super.dispose();
+  }
+
+  void _subscribeToTransactions() {
+    final userId = state.user.id;
+    if (userId.isEmpty) return;
+    _subscribedUserId = userId;
+    _transactionsChannel = Supabase.instance.client
+        .channel('rewards-transactions-$userId-${identityHashCode(this)}')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'transactions',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'user_id',
+            value: userId,
+          ),
+          callback: (_) => unawaited(_refreshTransactions()),
+        )
+        .subscribe();
+  }
+
+  void _removeTransactionsSubscription() {
+    final channel = _transactionsChannel;
+    _transactionsChannel = null;
+    _subscribedUserId = null;
+    if (channel != null) {
+      unawaited(Supabase.instance.client.removeChannel(channel));
+    }
+  }
+
+  Future<void> _refreshTransactions() async {
+    final userId = state.user.id;
+    if (userId.isEmpty) return;
+    try {
+      final transactions = await SupabaseProfilesService()
+          .getRecentTransactionsStrict(userId: userId, limit: 10);
+      if (!mounted || state.user.id != userId || _subscribedUserId != userId) {
+        return;
+      }
+      setState(() => state.transactions = transactions);
+    } catch (error) {
+      debugPrint('Failed to refresh recent points activity: $error');
+      if (mounted && widget.isActive) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Recent activity could not be refreshed.'),
+          ),
+        );
+      }
+    }
+  }
 
   Color get _membershipColor {
     switch (state.membership) {
@@ -20,7 +118,7 @@ class RewardsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final recent = state.transactions.take(5).toList();
+    final recent = state.transactions.take(3).toList();
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F0E8),
@@ -142,14 +240,37 @@ class RewardsScreen extends StatelessWidget {
             PromoSection(promotions: state.promotions),
             const SizedBox(height: 12),
 
-            // ── Recent Transactions ──────────────────────────────────
-            const Text(
-              'Recent Transactions',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF3E2723),
-              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Recent Activity',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF3E2723),
+                  ),
+                ),
+                if (recent.isNotEmpty)
+                  TextButton(
+                    onPressed: widget.onSeeAll ??
+                        () => Navigator.of(context).push<void>(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const PointsHistoryScreen(),
+                          ),
+                        ),
+                    style: TextButton.styleFrom(
+                      foregroundColor: const Color(0xFF8D6E63),
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: const Text(
+                      'See all',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+              ],
             ),
             const SizedBox(height: 12),
             if (recent.isEmpty)
@@ -157,7 +278,7 @@ class RewardsScreen extends StatelessWidget {
                 child: Padding(
                   padding: const EdgeInsets.all(24),
                   child: Text(
-                    'No transactions yet.',
+                    'No activity yet.',
                     style: TextStyle(color: Colors.grey[500]),
                   ),
                 ),
@@ -299,8 +420,9 @@ class _TransactionTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final isEarned = transaction.points > 0;
     final color = isEarned ? const Color(0xFF2E7D32) : const Color(0xFFC62828);
+    final date = transaction.date.toUtc().add(const Duration(hours: 8));
     final dateStr =
-        '${_months[transaction.date.month - 1]} ${transaction.date.day}';
+        '${_months[date.month - 1]} ${date.day}';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),

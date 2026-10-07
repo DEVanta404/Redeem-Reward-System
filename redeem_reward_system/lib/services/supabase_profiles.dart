@@ -130,7 +130,41 @@ class SupabaseProfilesService {
       final points = int.tryParse(result['points']?.toString() ?? '');
       if (points != null) return points;
     }
-    throw const FormatException('The reward service returned no point balance.');
+    throw const FormatException(
+      'The reward service returned no point balance.',
+    );
+  }
+
+  Future<void> updateNotificationPreference({
+    required String userId,
+    required String key,
+    required bool enabled,
+  }) async {
+    if (key != 'promotions' && key != 'streaks') {
+      throw ArgumentError.value(
+        key,
+        'key',
+        'Unsupported notification preference',
+      );
+    }
+    final profile = await _client
+        .from('profiles')
+        .select('notification_preferences')
+        .eq('id', userId)
+        .single();
+    final raw = profile['notification_preferences'];
+    final preferences = raw is Map
+        ? Map<String, dynamic>.from(raw)
+        : <String, dynamic>{
+            'orders': true,
+            'promotions': true,
+            'streaks': true,
+          };
+    preferences[key] = enabled;
+    await _client
+        .from('profiles')
+        .update({'notification_preferences': preferences})
+        .eq('id', userId);
   }
 
   Future<List<AppTransaction>> getRecentTransactions({
@@ -151,6 +185,21 @@ class SupabaseProfilesService {
       debugPrint('Failed to load transactions: $error');
       return const [];
     }
+  }
+
+  Future<List<AppTransaction>> getRecentTransactionsStrict({
+    required String userId,
+    int limit = 10,
+  }) async {
+    final response = await _client
+        .from('transactions')
+        .select()
+        .eq('user_id', userId)
+        .order('created_at', ascending: false)
+        .limit(limit);
+    return (response as List<dynamic>)
+        .map((row) => AppTransaction.fromMap(Map<String, dynamic>.from(row)))
+        .toList();
   }
 
   Future<List<Promotion>> getPromotions({bool activeOnly = false}) async {
@@ -296,9 +345,7 @@ class SupabaseProfilesService {
 
   Stream<List<DealItem>> streamDeals({bool activeOnly = true}) {
     final stream = _client.from('deals').stream(primaryKey: ['id']);
-    final visible = activeOnly
-        ? stream.eq('is_active', true)
-        : stream;
+    final visible = activeOnly ? stream.eq('is_active', true) : stream;
     return visible.map(
       (rows) => rows
           .map((row) => DealItem.fromMap(Map<String, dynamic>.from(row)))

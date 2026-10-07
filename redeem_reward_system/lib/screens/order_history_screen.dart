@@ -15,6 +15,8 @@ class OrderHistoryScreen extends StatefulWidget {
   final String userId;
   final VoidCallback onNavigateToDeals;
   final bool isActive;
+  final String? selectedOrderId;
+  final VoidCallback? onOrderSelectionHandled;
   final OrdersLoader? loadOrders;
   final OrdersWatcher? watchOrders;
   final PointsRateLoader? loadPointsRate;
@@ -25,6 +27,8 @@ class OrderHistoryScreen extends StatefulWidget {
     required this.userId,
     required this.onNavigateToDeals,
     this.isActive = true,
+    this.selectedOrderId,
+    this.onOrderSelectionHandled,
     this.loadOrders,
     this.watchOrders,
     this.loadPointsRate,
@@ -42,6 +46,7 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
   OrderPointsRate? _pointsRate;
   Object? _error;
   bool _loading = true;
+  String? _openedOrderId;
 
   OrderHistoryService get _orderService => _service ??= OrderHistoryService();
 
@@ -55,11 +60,15 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
   void didUpdateWidget(covariant OrderHistoryScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.userId != widget.userId ||
-        oldWidget.isActive != widget.isActive) {
+        oldWidget.isActive != widget.isActive ||
+        oldWidget.selectedOrderId != widget.selectedOrderId) {
       _ordersSubscription?.cancel();
       _ordersSubscription = null;
       if (widget.userId != oldWidget.userId) _orders = [];
       if (widget.isActive) _activate();
+      if (widget.selectedOrderId != oldWidget.selectedOrderId) {
+        _scheduleSelectedOrderOpen();
+      }
     }
   }
 
@@ -76,6 +85,7 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
         _loading = false;
         _error = null;
       });
+      _scheduleSelectedOrderOpen();
       return;
     }
     _ordersSubscription =
@@ -109,6 +119,7 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
         _loading = false;
         _error = null;
       });
+      _scheduleSelectedOrderOpen();
       if (widget.onOrdersChanged != null) {
         unawaited(widget.onOrdersChanged!());
       }
@@ -239,20 +250,48 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
         return _OrderHistoryCard(
           order: order,
           pointsRate: _pointsRate,
-          onTap: () => showModalBottomSheet<void>(
-            context: context,
-            isScrollControlled: true,
-            backgroundColor: Colors.transparent,
-            builder: (_) => _OrderDetailsSheet(
-              order: order,
-              pointsRate: _pointsRate,
-              userId: widget.userId,
-              loadOrders: widget.loadOrders ?? _orderService.getOrders,
-              watchOrders: widget.watchOrders ?? _orderService.watchOrders,
-            ),
-          ),
+          onTap: () => _showOrderDetails(order),
         );
       },
+    );
+  }
+
+  void _scheduleSelectedOrderOpen() {
+    final orderId = widget.selectedOrderId;
+    if (orderId == null || orderId == _openedOrderId || _loading) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || widget.selectedOrderId != orderId) return;
+      OrderHistoryEntry? match;
+      for (final order in _orders) {
+        if (order.id == orderId) {
+          match = order;
+          break;
+        }
+      }
+      _openedOrderId = orderId;
+      widget.onOrderSelectionHandled?.call();
+      if (match == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('That order is no longer available.')),
+        );
+        return;
+      }
+      _showOrderDetails(match);
+    });
+  }
+
+  void _showOrderDetails(OrderHistoryEntry order) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _OrderDetailsSheet(
+        order: order,
+        pointsRate: _pointsRate,
+        userId: widget.userId,
+        loadOrders: widget.loadOrders ?? _orderService.getOrders,
+        watchOrders: widget.watchOrders ?? _orderService.watchOrders,
+      ),
     );
   }
 

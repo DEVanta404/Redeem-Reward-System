@@ -19,6 +19,7 @@ import 'screens/splash_screen.dart';
 import 'services/daily_rewards_service.dart';
 import 'screens/password_update_screen.dart';
 import 'screens/notifications_screen.dart';
+import 'screens/points_history_screen.dart';
 import 'services/notifications_service.dart';
 
 const supabaseUrl = 'https://hlvwhxtneqdsnofhoplr.supabase.co';
@@ -127,6 +128,16 @@ class _RewardAppState extends State<RewardApp> {
         birthday: profile?['birthday']?.toString() ?? '',
         avatarUrl: profile?['avatar_url']?.toString() ?? '',
         role: role,
+        notificationPreferences:
+            profile?['notification_preferences'] is Map
+            ? Map<String, dynamic>.from(
+                profile!['notification_preferences'] as Map,
+              )
+            : const {
+                'orders': true,
+                'promotions': true,
+                'streaks': true,
+              },
       );
 
       if (role == 'admin') {
@@ -353,6 +364,7 @@ class MainScaffold extends StatefulWidget {
 class _MainScaffoldState extends State<MainScaffold>
     with WidgetsBindingObserver {
   int _index = 0;
+  String? _pendingOrderId;
   int _unreadNotificationCount = 0;
   RealtimeChannel? _notificationChannel;
   Timer? _notificationRefreshTimer;
@@ -467,6 +479,11 @@ class _MainScaffoldState extends State<MainScaffold>
               setState(() => _index = 4);
             } else if (notification.type == 'reward_redeemed') {
               setState(() => _index = 1);
+            } else if (notification.type == 'promo_new' ||
+                notification.type == 'promo_ending') {
+              setState(() => _index = 1);
+            } else if (notification.type == 'streak_ready') {
+              setState(() => _index = 0);
             }
           },
         ),
@@ -475,7 +492,43 @@ class _MainScaffoldState extends State<MainScaffold>
     if (mounted) await _refreshUnreadCount();
   }
 
+  Future<void> _openPointsHistory() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => PointsHistoryScreen(
+          onOrderSelected: (orderId) async {
+            if (!mounted) return;
+            Navigator.of(context).pop();
+            setState(() {
+              _pendingOrderId = orderId;
+              _index = 4;
+            });
+          },
+        ),
+      ),
+    );
+  }
+
   void _refresh() => setState(() {});
+
+  Future<void> _updateNotificationPreference(
+    String key,
+    bool enabled,
+  ) async {
+    final userId = widget.state.user.id;
+    await SupabaseProfilesService().updateNotificationPreference(
+      userId: userId,
+      key: key,
+      enabled: enabled,
+    );
+    if (!mounted || widget.state.user.id != userId) return;
+    setState(() {
+      widget.state.user.notificationPreferences = {
+        ...widget.state.user.notificationPreferences,
+        key: enabled,
+      };
+    });
+  }
 
   Future<void> _refreshUserRewardsState() async {
     final userId = widget.state.user.id;
@@ -510,12 +563,19 @@ class _MainScaffoldState extends State<MainScaffold>
         unreadNotificationCount: _unreadNotificationCount,
         onOpenNotifications: _openNotifications,
       ),
-      RewardsScreen(state: widget.state),
+      RewardsScreen(
+        state: widget.state,
+        isActive: _index == 1,
+        onSeeAll: _openPointsHistory,
+      ),
       RedeemScreen(state: widget.state, onRedeem: _refresh),
       DealsScreen(state: widget.state, isActive: _index == 3),
       OrderHistoryScreen(
         userId: widget.state.user.id,
         isActive: _index == 4,
+        selectedOrderId: _pendingOrderId,
+        onOrderSelectionHandled: () =>
+            setState(() => _pendingOrderId = null),
         onNavigateToDeals: () => setState(() => _index = 3),
         onOrdersChanged: _refreshUserRewardsState,
       ),
@@ -523,6 +583,7 @@ class _MainScaffoldState extends State<MainScaffold>
         state: widget.state,
         onProfileUpdated: _refresh,
         onLoggedOut: widget.onLoggedOut,
+        onNotificationPreferenceChanged: _updateNotificationPreference,
       ),
     ];
 

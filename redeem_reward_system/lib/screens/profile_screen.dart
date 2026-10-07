@@ -9,12 +9,15 @@ class ProfileScreen extends StatelessWidget {
   final AppState state;
   final VoidCallback onProfileUpdated;
   final VoidCallback onLoggedOut;
+  final Future<void> Function(String key, bool enabled)?
+  onNotificationPreferenceChanged;
 
   const ProfileScreen({
     super.key,
     required this.state,
     required this.onProfileUpdated,
     required this.onLoggedOut,
+    this.onNotificationPreferenceChanged,
   });
 
   Color get _membershipColor {
@@ -180,6 +183,11 @@ class ProfileScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 10),
+            _NotificationPreferences(
+              preferences: state.user.notificationPreferences,
+              onChanged: onNotificationPreferenceChanged,
+            ),
+            const SizedBox(height: 10),
             _ActionButton(
               icon: Icons.lock_outline,
               label: 'Change Password',
@@ -264,6 +272,88 @@ class ProfileScreen extends StatelessWidget {
 }
 
 // ─── Widgets ──────────────────────────────────────────────────────────────────
+
+class _NotificationPreferences extends StatelessWidget {
+  final Map<String, dynamic> preferences;
+  final Future<void> Function(String key, bool enabled)? onChanged;
+
+  const _NotificationPreferences({
+    required this.preferences,
+    required this.onChanged,
+  });
+
+  bool _enabled(String key) => preferences[key] != false;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: double.infinity,
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.04),
+          blurRadius: 6,
+          offset: const Offset(0, 2),
+        ),
+      ],
+    ),
+    child: Material(
+      color: Colors.transparent,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(18, 16, 18, 2),
+            child: Text(
+              'Notifications',
+              style: TextStyle(
+                color: Color(0xFF3E2723),
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          SwitchListTile(
+            title: const Text('Order updates'),
+            subtitle: const Text('Always on'),
+            value: true,
+            onChanged: null,
+            activeTrackColor: const Color(0xFF795548),
+            dense: true,
+          ),
+          _preferenceSwitch(context, 'Promotions', 'promotions'),
+          _preferenceSwitch(context, 'Streak reminders', 'streaks'),
+        ],
+      ),
+    ),
+  );
+
+  Widget _preferenceSwitch(BuildContext context, String title, String key) =>
+      SwitchListTile(
+        title: Text(title),
+        value: _enabled(key),
+        onChanged: onChanged == null
+            ? null
+            : (value) async {
+                try {
+                  await onChanged!(key, value);
+                } catch (_) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Could not update notification preferences.',
+                        ),
+                      ),
+                    );
+                  }
+                }
+              },
+        activeTrackColor: const Color(0xFF795548),
+        dense: true,
+      );
+}
 
 class _InfoItem {
   final IconData icon;

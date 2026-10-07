@@ -10,6 +10,7 @@ class UserProfile {
   String avatarPath;
   String avatarUrl;
   String role;
+  Map<String, dynamic> notificationPreferences;
 
   UserProfile({
     this.id = '',
@@ -20,6 +21,11 @@ class UserProfile {
     this.avatarPath = '',
     this.avatarUrl = '',
     this.role = 'user',
+    this.notificationPreferences = const {
+      'orders': true,
+      'promotions': true,
+      'streaks': true,
+    },
   });
 
   bool get isAdmin => role == 'admin';
@@ -33,6 +39,7 @@ class UserProfile {
     String? avatarPath,
     String? avatarUrl,
     String? role,
+    Map<String, dynamic>? notificationPreferences,
   }) => UserProfile(
     id: id ?? this.id,
     name: name ?? this.name,
@@ -42,16 +49,22 @@ class UserProfile {
     avatarPath: avatarPath ?? this.avatarPath,
     avatarUrl: avatarUrl ?? this.avatarUrl,
     role: role ?? this.role,
+    notificationPreferences:
+        notificationPreferences ?? this.notificationPreferences,
   );
 }
 
 class AppTransaction {
+  final String id;
+  final String? orderId;
   final DateTime date;
   final int points;
   final String description;
   final String type;
 
   const AppTransaction({
+    this.id = '',
+    this.orderId,
     required this.date,
     required this.points,
     required this.description,
@@ -65,11 +78,15 @@ class AppTransaction {
         map['transaction_type']?.toString() ??
         map['type']?.toString() ??
         'redemption';
-    final pointsValue =
-        int.tryParse(map['points']?.toString() ?? '') ??
-        (type == 'earned' ? pointsSpent : -pointsSpent);
+    final storedPoints = int.tryParse(map['points']?.toString() ?? '');
+    final rawPoints = storedPoints == null || storedPoints == 0
+        ? pointsSpent
+        : storedPoints.abs();
+    final pointsValue = type == 'earned' ? rawPoints.abs() : -rawPoints.abs();
     final rewardName = map['reward_name']?.toString();
     return AppTransaction(
+      id: map['id']?.toString() ?? '',
+      orderId: map['order_id']?.toString(),
       date:
           DateTime.tryParse(
             map['created_at']?.toString() ?? map['timestamp']?.toString() ?? '',

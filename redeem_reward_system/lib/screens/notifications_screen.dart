@@ -5,6 +5,28 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../services/notifications_service.dart';
 
+enum _NotificationFilter {
+  all('All'),
+  orders('Orders'),
+  promos('Promos'),
+  rewards('Rewards');
+
+  final String label;
+  const _NotificationFilter(this.label);
+
+  List<String>? get types => switch (this) {
+    all => null,
+    orders => [
+      'order_placed',
+      'order_completed',
+      'order_cancelled',
+      'new_order_admin',
+    ],
+    promos => ['promo_new', 'promo_ending'],
+    rewards => ['points_earned', 'reward_redeemed', 'streak_ready'],
+  };
+}
+
 class NotificationsScreen extends StatefulWidget {
   final bool isAdmin;
   final Future<void> Function(AppNotification notification)?
@@ -31,8 +53,16 @@ class _NotificationsScreenState extends State<NotificationsScreen>
   bool _markingAll = false;
   Object? _error;
   Timer? _refreshTimer;
+  _NotificationFilter _filter = _NotificationFilter.all;
 
   String? get _userId => Supabase.instance.client.auth.currentUser?.id;
+
+  List<AppNotification> get _visibleNotifications {
+    final types = _filter.types;
+    return types == null
+        ? _notifications
+        : _notifications.where((item) => types.contains(item.type)).toList();
+  }
 
   @override
   void initState() {
@@ -110,6 +140,7 @@ class _NotificationsScreenState extends State<NotificationsScreen>
       final page = await _service.load(
         offset: reset ? 0 : _notifications.length,
         limit: _pageSize,
+        types: _filter.types,
       );
       if (!mounted) return;
       setState(() {
@@ -206,8 +237,30 @@ class _NotificationsScreenState extends State<NotificationsScreen>
     'order_cancelled' => Icons.cancel_outlined,
     'points_earned' => Icons.stars_outlined,
     'reward_redeemed' => Icons.card_giftcard_outlined,
+    'promo_new' => Icons.local_offer_outlined,
+    'promo_ending' => Icons.hourglass_bottom_outlined,
+    'streak_ready' => Icons.local_fire_department_outlined,
     _ => Icons.notifications_outlined,
   };
+
+  List<_NotificationGroup> _groups(List<AppNotification> notifications) {
+    final today = _manilaDate(DateTime.now());
+    final todayDate = DateTime(today.year, today.month, today.day);
+    final todayItems = <AppNotification>[];
+    final earlierItems = <AppNotification>[];
+    for (final item in notifications) {
+      final date = _manilaDate(item.createdAt);
+      if (DateTime(date.year, date.month, date.day) == todayDate) {
+        todayItems.add(item);
+      } else {
+        earlierItems.add(item);
+      }
+    }
+    return [
+      if (todayItems.isNotEmpty) _NotificationGroup('Today', todayItems),
+      if (earlierItems.isNotEmpty) _NotificationGroup('Earlier', earlierItems),
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -271,20 +324,25 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                   ),
                 ],
               )
-            : _notifications.isEmpty
+            : _visibleNotifications.isEmpty
             ? ListView(
                 physics: AlwaysScrollableScrollPhysics(),
                 children: [
+                  _buildFilters(),
                   SizedBox(height: 140),
                   Icon(
-                    Icons.notifications_none,
+                    _notifications.isEmpty
+                        ? Icons.notifications_none
+                        : Icons.filter_list_off,
                     size: 54,
                     color: Color(0xFF8D6E63),
                   ),
                   SizedBox(height: 12),
                   Center(
                     child: Text(
-                      'No notifications yet',
+                      _notifications.isEmpty
+                          ? 'No notifications yet'
+                          : 'No matching notifications',
                       style: TextStyle(
                         color: Color(0xFF3E2723),
                         fontWeight: FontWeight.w600,
@@ -293,23 +351,24 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                   ),
                 ],
               )
-            : ListView.builder(
+            : ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-                itemCount: _notifications.length + (_hasMore ? 1 : 0),
-                itemBuilder: (context, index) {
-                  if (index == _notifications.length) {
-                    return Center(
-                      child: TextButton(
-                        onPressed: _loading ? null : () => _load(reset: false),
-                        child: _loading
-                            ? const CircularProgressIndicator()
-                            : const Text('Load more'),
+                children: [
+                  _buildFilters(),
+                  for (final group in _groups(_visibleNotifications)) ...[
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(2, 12, 2, 8),
+                      child: Text(
+                        group.label,
+                        style: const TextStyle(
+                          color: Color(0xFF5D4037),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
                       ),
-                    );
-                  }
-                  final item = _notifications[index];
-                  return Card(
+                    ),
+                    ...group.items.map((item) => Card(
                     color: item.isRead ? Colors.white : const Color(0xFFFFFBF6),
                     elevation: 0,
                     margin: const EdgeInsets.only(bottom: 10),
@@ -385,10 +444,62 @@ class _NotificationsScreenState extends State<NotificationsScreen>
                         ),
                       ),
                     ),
-                  );
-                },
+                  )),
+                  ],
+                  if (_hasMore)
+                    Center(
+                      child: TextButton(
+                        onPressed: _loading ? null : () => _load(reset: false),
+                        child: _loading
+                            ? const CircularProgressIndicator()
+                            : const Text('Load more'),
+                      ),
+                    ),
+                ],
               ),
       ),
     );
   }
+
+  Widget _buildFilters() => SingleChildScrollView(
+    scrollDirection: Axis.horizontal,
+    padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+    child: Row(
+      children: _NotificationFilter.values.map((filter) {
+        final selected = _filter == filter;
+        return Padding(
+          padding: const EdgeInsets.only(right: 8),
+          child: ChoiceChip(
+            label: Text(filter.label),
+            selected: selected,
+            showCheckmark: false,
+            selectedColor: const Color(0xFF3E2723),
+            backgroundColor: Colors.white,
+            labelStyle: TextStyle(
+              color: selected ? Colors.white : const Color(0xFF5D4037),
+              fontWeight: FontWeight.w600,
+            ),
+            onSelected: (_) {
+              if (_filter == filter) return;
+              setState(() {
+                _filter = filter;
+                _notifications.clear();
+                _hasMore = false;
+              });
+              _load(reset: true);
+            },
+          ),
+        );
+      }).toList(),
+    ),
+  );
 }
+
+class _NotificationGroup {
+  final String label;
+  final List<AppNotification> items;
+  const _NotificationGroup(this.label, this.items);
+}
+
+DateTime _manilaDate(DateTime value) =>
+    value.toUtc().add(const Duration(hours: 8));

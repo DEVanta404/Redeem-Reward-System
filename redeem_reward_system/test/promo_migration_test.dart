@@ -38,9 +38,9 @@ void main() {
 
       expect(find.text("Today's Promo"), findsOneWidget);
       expect(find.text('Weekend Feature'), findsOneWidget);
-      expect(find.text('Recent Transactions'), findsOneWidget);
+      expect(find.text('Recent Activity'), findsOneWidget);
       expect(
-        tester.getTopLeft(find.text('Recent Transactions')).dy,
+        tester.getTopLeft(find.text('Recent Activity')).dy,
         greaterThan(tester.getTopLeft(find.text('Weekend Feature')).dy),
       );
       expect(tester.takeException(), isNull);

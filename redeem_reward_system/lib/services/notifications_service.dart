@@ -55,19 +55,18 @@ class NotificationsService {
   Future<List<AppNotification>> load({
     required int offset,
     int limit = 50,
+    List<String>? types,
   }) async {
-    final rows = await _client
+    var query = _client
         .from('notifications')
-        .select(
-          'id, user_id, type, title, body, data, is_read, created_at',
-        )
-        .eq('user_id', _userId)
+        .select('id, user_id, type, title, body, data, is_read, created_at')
+        .eq('user_id', _userId);
+    if (types != null) query = query.inFilter('type', types);
+    final rows = await query
         .order('created_at', ascending: false)
         .range(offset, offset + limit - 1);
     return (rows as List)
-        .map(
-          (row) => AppNotification.fromMap(Map<String, dynamic>.from(row)),
-        )
+        .map((row) => AppNotification.fromMap(Map<String, dynamic>.from(row)))
         .toList(growable: false);
   }
 
@@ -105,5 +104,6 @@ String notificationAge(DateTime createdAt, {DateTime? now}) {
   }
   if (difference.inHours < 24) return '${difference.inHours} hr ago';
   if (difference.inDays < 7) return '${difference.inDays} days ago';
-  return '${createdAt.day}/${createdAt.month}/${createdAt.year}';
+  final manila = createdAt.toUtc().add(const Duration(hours: 8));
+  return '${manila.day}/${manila.month}/${manila.year}';
 }

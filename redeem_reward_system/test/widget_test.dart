@@ -36,6 +36,19 @@ void main() {
         'created_at': '2026-10-01T10:00:00Z',
       });
       expect(redeemed.points, -100);
+
+      final legacyRedeemed = AppTransaction.fromMap({
+        'id': 'transaction-1',
+        'transaction_type': 'redemption',
+        'points': 0,
+        'points_spent': 250,
+        'reward_name': 'Kapetol Tumbler',
+        'order_id': 'order-1',
+        'created_at': '2026-10-01T10:00:00Z',
+      });
+      expect(legacyRedeemed.points, -250);
+      expect(legacyRedeemed.id, 'transaction-1');
+      expect(legacyRedeemed.orderId, 'order-1');
     },
   );
 
