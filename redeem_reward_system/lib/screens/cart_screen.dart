@@ -8,7 +8,7 @@ import '../services/cart_state.dart';
 import '../services/currency_formatter.dart';
 import '../services/orders_service.dart';
 import '../services/supabase_profiles.dart';
-import 'order_code_qr.dart';
+import 'checkout_screen.dart';
 
 class CartScreen extends StatefulWidget {
   final AppState state;
@@ -233,38 +233,38 @@ class _CartScreenState extends State<CartScreen> {
     if (_isPlacingOrder || cart.isEmpty) return;
 
     setState(() => _isPlacingOrder = true);
-    final cartSnapshot = cart.items;
     try {
-      final placement = await (widget.placeOrder ?? OrdersService().placeOrder)(
-        cartSnapshot,
-      );
-      if (!mounted) return;
-
-      final order = DealOrder(
-        items: placement.items,
-        total: placement.total,
-        orderCode: placement.orderCode,
-        orderedAt: DateTime.now(),
-      );
-      widget.state.dealOrders.insert(0, order);
-      cart.clear();
-
-      await showDialog<void>(
-        context: context,
-        barrierDismissible: false,
-        builder: (dialogContext) => _OrderReadyDialog(
-          order: order,
-          onDone: () => Navigator.of(dialogContext).pop(),
+      final placed = await Navigator.of(context).push<bool>(
+        MaterialPageRoute(
+          builder: (_) => CheckoutScreen(
+            cart: cart,
+            loadDeals: widget.loadDeals,
+            legacyPlaceOrder: widget.placeOrder,
+            onOrderPlaced: (placement) {
+              widget.state.dealOrders.insert(
+                0,
+                DealOrder(
+                  items: placement.items
+                      .map(
+                        (item) => DealOrderItem(
+                          id: item.id,
+                          name: item.name,
+                          category: item.category,
+                          quantity: item.quantity,
+                          unitPrice: item.unitPrice,
+                        ),
+                      )
+                      .toList(),
+                  total: placement.total,
+                  orderCode: placement.orderCode,
+                  orderedAt: placement.createdAt,
+                ),
+              );
+            },
+          ),
         ),
       );
-
-      if (mounted) Navigator.of(context).pop();
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not place order: $error')),
-        );
-      }
+      if (placed == true && mounted) Navigator.of(context).pop();
     } finally {
       if (mounted) setState(() => _isPlacingOrder = false);
     }
@@ -378,100 +378,6 @@ class _CartItemTile extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _OrderReadyDialog extends StatelessWidget {
-  final DealOrder order;
-  final VoidCallback onDone;
-
-  const _OrderReadyDialog({required this.order, required this.onDone});
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      scrollable: true,
-      title: const Row(
-        children: [
-          Icon(Icons.check_circle, color: Color(0xFF2E7D32)),
-          SizedBox(width: 8),
-          Text('Order ready'),
-        ],
-      ),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ...order.items.map(
-            (item) => Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: Row(
-                children: [
-                  Text(
-                    '${item.quantity}x',
-                    style: const TextStyle(
-                      color: Color(0xFF8D6E63),
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      '${item.name} · ${formatPeso(item.unitPrice * item.quantity)}',
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Total',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              Text(
-                formatPeso(order.total),
-                style: const TextStyle(
-                  color: Color(0xFF3E2723),
-                  fontSize: 17,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          OrderCodeQr(orderCode: order.orderCode),
-          const SizedBox(height: 10),
-          const Text(
-            'Show this code at the store counter',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Color(0xFF6D5B53), fontSize: 13),
-          ),
-          const SizedBox(height: 8),
-          SelectableText(
-            order.orderCode,
-            style: const TextStyle(
-              color: Color(0xFF3E2723),
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 1.4,
-            ),
-          ),
-        ],
-      ),
-      actions: [
-        FilledButton(
-          onPressed: onDone,
-          style: FilledButton.styleFrom(
-            backgroundColor: const Color(0xFF3E2723),
-          ),
-          child: const Text('Done'),
-        ),
-      ],
     );
   }
 }

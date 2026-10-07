@@ -1,4 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'payment_method.dart';
 
 class OrderHistoryItem {
   final String dealId;
@@ -39,6 +40,14 @@ class OrderHistoryEntry {
   final int pointsEarned;
   final DateTime createdAt;
   final List<OrderHistoryItem> items;
+  final double subtotal;
+  final String paymentMethod;
+  final String paymentStatus;
+  final double? amountTendered;
+  final double? changeAmount;
+  final String? paymentReference;
+  final DateTime? paidAt;
+  final String? receiptNo;
 
   const OrderHistoryEntry({
     required this.id,
@@ -49,7 +58,15 @@ class OrderHistoryEntry {
     this.pointsEarned = 0,
     required this.createdAt,
     required this.items,
-  });
+    double? subtotal,
+    this.paymentMethod = 'cash',
+    this.paymentStatus = 'unpaid',
+    this.amountTendered,
+    this.changeAmount,
+    this.paymentReference,
+    this.paidAt,
+    this.receiptNo,
+  }) : subtotal = subtotal ?? total;
 
   int get itemCount => items.fold(0, (count, item) => count + item.quantity);
 
@@ -81,16 +98,60 @@ class OrderHistoryEntry {
       userId: map['user_id']?.toString() ?? '',
       orderCode: map['order_code']?.toString() ?? '',
       total:
-          double.tryParse(map['total']?.toString() ?? '') ??
-          items.fold(0, (sum, item) => sum + item.lineTotal),
+          double.tryParse(
+            map['total_amount']?.toString() ?? map['total']?.toString() ?? '',
+          ) ??
+          items.fold<double>(0, (sum, item) => sum + item.lineTotal),
       status: map['status']?.toString() ?? 'placed',
       pointsEarned: int.tryParse(map['points_earned']?.toString() ?? '') ?? 0,
       createdAt:
           DateTime.tryParse(map['created_at']?.toString() ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0),
       items: items,
+      subtotal:
+          double.tryParse(map['subtotal']?.toString() ?? '') ??
+          double.tryParse(map['total']?.toString() ?? '') ??
+          items.fold<double>(0, (sum, item) => sum + item.lineTotal),
+      paymentMethod:
+          PaymentMethod.fromValue(map['payment_method']?.toString()).value,
+      paymentStatus: map['payment_status']?.toString() ?? 'unpaid',
+      amountTendered: double.tryParse(
+        map['amount_tendered']?.toString() ?? '',
+      ),
+      changeAmount: double.tryParse(map['change_amount']?.toString() ?? ''),
+      paymentReference: map['payment_reference']?.toString(),
+      paidAt: DateTime.tryParse(map['paid_at']?.toString() ?? ''),
+      receiptNo: map['receipt_no']?.toString(),
     );
   }
+
+  OrderHistoryEntry copyWith({
+    String? status,
+    int? pointsEarned,
+    String? paymentMethod,
+    String? paymentStatus,
+    double? amountTendered,
+    double? changeAmount,
+    String? paymentReference,
+    DateTime? paidAt,
+  }) => OrderHistoryEntry(
+    id: id,
+    userId: userId,
+    orderCode: orderCode,
+    total: total,
+    status: status ?? this.status,
+    pointsEarned: pointsEarned ?? this.pointsEarned,
+    createdAt: createdAt,
+    items: items,
+    subtotal: subtotal,
+    paymentMethod: paymentMethod ?? this.paymentMethod,
+    paymentStatus: paymentStatus ?? this.paymentStatus,
+    amountTendered: amountTendered ?? this.amountTendered,
+    changeAmount: changeAmount ?? this.changeAmount,
+    paymentReference: paymentReference ?? this.paymentReference,
+    paidAt: paidAt ?? this.paidAt,
+    receiptNo: receiptNo,
+  );
 }
 
 class OrderPointsRate {
@@ -116,7 +177,7 @@ class OrderHistoryService {
     final rows = await _client
         .from('orders')
         .select(
-          'id, user_id, order_code, total, status, points_earned, created_at, items, order_items(id, deal_id, deal_name, deal_category, unit_price, quantity)',
+          'id, user_id, order_code, total, subtotal, status, points_earned, created_at, items, payment_method, payment_status, amount_tendered, change_amount, payment_reference, paid_at, receipt_no, order_items(id, deal_id, deal_name, deal_category, unit_price, quantity)',
         )
         .eq('user_id', userId)
         .order('created_at', ascending: false)
@@ -136,7 +197,7 @@ class OrderHistoryService {
     var query = _client
         .from('orders')
         .select(
-          'id, user_id, order_code, total, status, points_earned, created_at, items, order_items(id, deal_id, deal_name, deal_category, unit_price, quantity)',
+          'id, user_id, order_code, total, subtotal, status, points_earned, created_at, items, payment_method, payment_status, amount_tendered, change_amount, payment_reference, paid_at, receipt_no, order_items(id, deal_id, deal_name, deal_category, unit_price, quantity)',
         );
     if (status != 'All') query = query.eq('status', status.toLowerCase());
     if (search.trim().isNotEmpty) {
@@ -164,7 +225,7 @@ class OrderHistoryService {
     final row = await _client
         .from('orders')
         .select(
-          'id, user_id, order_code, total, status, points_earned, created_at, items, order_items(id, deal_id, deal_name, deal_category, unit_price, quantity)',
+          'id, user_id, order_code, total, subtotal, status, points_earned, created_at, items, payment_method, payment_status, amount_tendered, change_amount, payment_reference, paid_at, receipt_no, order_items(id, deal_id, deal_name, deal_category, unit_price, quantity)',
         )
         .eq('id', orderId)
         .maybeSingle();

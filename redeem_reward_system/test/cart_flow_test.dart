@@ -11,7 +11,7 @@ import 'package:kapetol_app/services/cart_state.dart';
 import 'package:kapetol_app/services/orders_service.dart';
 
 void main() {
-  testWidgets('deals add to cart and checkout shows the order QR', (
+  testWidgets('checkout confirms cash tender and shows the ticket receipt', (
     tester,
   ) async {
     final state = AppState();
@@ -89,19 +89,49 @@ void main() {
     await tester.tap(find.text('Place order'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Order ready'), findsOneWidget);
-    expect(find.text('3x'), findsOneWidget);
-    expect(find.text('Brown Sugar Oat Latte · ₱360.00'), findsOneWidget);
-    expect(find.text('₱360.00'), findsOneWidget);
+    expect(find.text('Checkout'), findsOneWidget);
+    expect(find.text('Order summary'), findsOneWidget);
+    expect(find.text('Cash'), findsOneWidget);
+    expect(find.text('GCash'), findsOneWidget);
+    expect(find.text('Maya'), findsOneWidget);
+    expect(find.text('Card'), findsOneWidget);
+    expect(find.text('Change: —'), findsOneWidget);
+
+    await tester.ensureVisible(find.byType(TextField).first);
+    await tester.enterText(find.byType(TextField).first, '100');
+    await tester.pump();
+    final blockedConfirm = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, 'Confirm order'),
+    );
+    expect(blockedConfirm.onPressed, isNull);
+    expect(
+      find.text('Amount must be at least ₱360.00.'),
+      findsOneWidget,
+    );
+
+    await tester.ensureVisible(find.text('Exact amount'));
+    await tester.tap(find.text('Exact amount'));
+    await tester.pump();
+    expect(find.text('Change: ₱0.00'), findsOneWidget);
+    await tester.tap(find.text('Confirm order'));
+    await tester.pumpAndSettle();
+    expect(find.text('Place this order?'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, 'Confirm'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Wait for your ticket to be called'), findsOneWidget);
+    expect(find.text('3x Brown Sugar Oat Latte'), findsOneWidget);
+    expect(find.text('₱360.00'), findsWidgets);
     expect(find.byType(QrImageView), findsOneWidget);
     expect(find.text('Show this code at the store counter'), findsOneWidget);
+    expect(find.text('Your ticket number'), findsOneWidget);
     expect(state.dealOrders.single.items.single.quantity, 3);
     expect(state.dealOrders.single.total, 360);
     expect(cart.isEmpty, isTrue);
 
     await tester.tap(find.text('Done'));
     await tester.pumpAndSettle();
-    expect(find.text('Order ready'), findsNothing);
+    expect(find.text('Wait for your ticket to be called'), findsNothing);
     expect(find.text('Deals'), findsOneWidget);
   });
 

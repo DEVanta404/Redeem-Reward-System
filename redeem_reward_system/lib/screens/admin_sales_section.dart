@@ -102,6 +102,8 @@ class AdminSalesSectionState extends State<AdminSalesSection> {
         else ...[
           _SummaryGrid(summary: _report!.summary),
           const SizedBox(height: 22),
+          _buildPaymentMethods(),
+          const SizedBox(height: 20),
           _buildDeals(),
           const SizedBox(height: 20),
           _buildRewards(),
@@ -185,6 +187,28 @@ class AdminSalesSectionState extends State<AdminSalesSection> {
               title: row.name,
               subtitle: row.category,
               trailing: '${row.unitsSold} units · ${formatPeso(row.revenue)}',
+            ),
+          )
+          .toList(),
+    );
+  }
+
+  Widget _buildPaymentMethods() {
+    final rows = _report!.paymentMethods;
+    return _SalesList(
+      title: 'Revenue by payment method',
+      isEmpty: rows.every((row) => row.paidOrders == 0),
+      children: rows
+          .map(
+            (row) => _SalesLine(
+              title: switch (row.paymentMethod) {
+                'gcash' => 'GCash',
+                'maya' => 'Maya',
+                'card' => 'Card',
+                _ => 'Cash',
+              },
+              subtitle: '${row.paidOrders} paid orders',
+              trailing: formatPeso(row.revenue),
             ),
           )
           .toList(),

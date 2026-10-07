@@ -86,12 +86,10 @@ void main() {
     await tester.tap(find.text('KPT-19JN'));
     await tester.pumpAndSettle();
     expect(find.byType(QrImageView), findsOneWidget);
-    expect(find.text('2 × ₱120.00'), findsOneWidget);
+    expect(find.text('@ ₱120.00'), findsNWidgets(2));
     expect(find.text('₱240.00'), findsOneWidget);
     expect(find.text('Show this code at the store counter'), findsOneWidget);
-    Navigator.of(tester.element(find.byType(QrImageView))).pop();
-    await tester.pumpAndSettle();
-
+    expect(find.text('Your ticket number'), findsOneWidget);
     currentOrder = OrderHistoryEntry(
       id: firstOrder.id,
       orderCode: firstOrder.orderCode,
@@ -103,6 +101,10 @@ void main() {
     );
     changes.add(const []);
     await tester.pumpAndSettle();
+    expect(find.text('Order completed'), findsOneWidget);
+    Navigator.of(tester.element(find.byType(QrImageView))).pop();
+    await tester.pumpAndSettle();
+
     expect(find.text('Completed'), findsOneWidget);
     expect(find.text('+30 pts'), findsOneWidget);
     expect(

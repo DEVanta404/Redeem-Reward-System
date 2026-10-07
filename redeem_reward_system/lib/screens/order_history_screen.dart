@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../services/currency_formatter.dart';
 import '../services/order_history_service.dart';
-import 'order_code_qr.dart';
+import 'order_receipt_screen.dart';
 
 typedef OrdersLoader = Future<List<OrderHistoryEntry>> Function(String userId);
 typedef OrdersWatcher =
@@ -243,8 +243,13 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
             context: context,
             isScrollControlled: true,
             backgroundColor: Colors.transparent,
-            builder: (_) =>
-                _OrderDetailsSheet(order: order, pointsRate: _pointsRate),
+            builder: (_) => _OrderDetailsSheet(
+              order: order,
+              pointsRate: _pointsRate,
+              userId: widget.userId,
+              loadOrders: widget.loadOrders ?? _orderService.getOrders,
+              watchOrders: widget.watchOrders ?? _orderService.watchOrders,
+            ),
           ),
         );
       },
@@ -365,15 +370,69 @@ class _OrderHistoryCard extends StatelessWidget {
   }
 }
 
-class _OrderDetailsSheet extends StatelessWidget {
+class _OrderDetailsSheet extends StatefulWidget {
   final OrderHistoryEntry order;
   final OrderPointsRate? pointsRate;
+  final String userId;
+  final OrdersLoader loadOrders;
+  final OrdersWatcher watchOrders;
 
-  const _OrderDetailsSheet({required this.order, required this.pointsRate});
+  const _OrderDetailsSheet({
+    required this.order,
+    required this.pointsRate,
+    required this.userId,
+    required this.loadOrders,
+    required this.watchOrders,
+  });
+
+  @override
+  State<_OrderDetailsSheet> createState() => _OrderDetailsSheetState();
+}
+
+class _OrderDetailsSheetState extends State<_OrderDetailsSheet> {
+  late OrderHistoryEntry _order;
+  StreamSubscription<List<Map<String, dynamic>>>? _subscription;
+  Object? _refreshError;
+
+  @override
+  void initState() {
+    super.initState();
+    _order = widget.order;
+    _subscription = widget.watchOrders(widget.userId).listen(
+      (_) => _refresh(),
+      onError: (Object error) {
+        if (mounted) setState(() => _refreshError = error);
+      },
+    );
+  }
+
+  Future<void> _refresh() async {
+    try {
+      final rows = await widget.loadOrders(widget.userId);
+      OrderHistoryEntry? updated;
+      for (final row in rows) {
+        if (row.id == _order.id) {
+          updated = row;
+          break;
+        }
+      }
+      if (!mounted) return;
+      final refreshed = updated;
+      if (refreshed != null) setState(() => _order = refreshed);
+      setState(() => _refreshError = null);
+    } catch (error) {
+      if (mounted) setState(() => _refreshError = error);
+    }
+  }
+
+  @override
+  void dispose() {
+    _subscription?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final status = _statusPresentation(order.status);
     return SafeArea(
       child: Container(
         constraints: BoxConstraints(
@@ -383,150 +442,25 @@ class _OrderDetailsSheet extends StatelessWidget {
           color: Color(0xFFF5F0E8),
           borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
         ),
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 26),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 38,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFBCAAA4),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 18),
-              Row(
-                children: [
-                  const Expanded(
-                    child: Text(
-                      'Order details',
-                      style: TextStyle(
-                        color: Color(0xFF3E2723),
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  _StatusChip(label: status.label, color: status.color),
+        child: Column(
+          children: [
+            if (_refreshError != null)
+              MaterialBanner(
+                content: const Text('Could not refresh this receipt status.'),
+                leading: const Icon(Icons.wifi_off),
+                actions: [
+                  TextButton(onPressed: _refresh, child: const Text('Retry')),
                 ],
               ),
-              const SizedBox(height: 4),
-              Text(
-                '${order.orderCode} · ${_formatDate(order.createdAt)}',
-                style: const TextStyle(color: Color(0xFF8D6E63), fontSize: 12),
+            Expanded(
+              child: OrderReceiptView(
+                order: _order,
+                listenForUpdates: false,
+                pendingPoints:
+                    widget.pointsRate?.pointsForTotal(_order.total) ?? 0,
               ),
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Column(
-                  children: [
-                    ...order.items.map(
-                      (item) => Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    item.name,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      color: Color(0xFF3E2723),
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 3),
-                                  Text(
-                                    '${item.quantity} × ${formatPeso(item.unitPrice)}',
-                                    style: const TextStyle(
-                                      color: Color(0xFF8D6E63),
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Text(
-                              formatPeso(item.lineTotal),
-                              style: const TextStyle(
-                                color: Color(0xFF3E2723),
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const Divider(height: 18),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'Total',
-                          style: TextStyle(
-                            color: Color(0xFF3E2723),
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        Text(
-                          formatPeso(order.total),
-                          style: const TextStyle(
-                            color: Color(0xFF3E2723),
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (order.status.toLowerCase() != 'cancelled') ...[
-                      const SizedBox(height: 10),
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: _orderPointsText(
-                          order,
-                          pointsRate,
-                          detail: true,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              const SizedBox(height: 18),
-              Center(child: OrderCodeQr(orderCode: order.orderCode, size: 176)),
-              const SizedBox(height: 10),
-              const Center(
-                child: Text(
-                  'Show this code at the store counter',
-                  style: TextStyle(color: Color(0xFF6D5B53), fontSize: 13),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Center(
-                child: SelectableText(
-                  order.orderCode,
-                  style: const TextStyle(
-                    color: Color(0xFF3E2723),
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -541,38 +475,6 @@ String _pendingPointsText(
   return points == 0
       ? 'No points for this order'
       : "You'll earn $points pts when this order is completed";
-}
-
-Widget _orderPointsText(
-  OrderHistoryEntry order,
-  OrderPointsRate? pointsRate, {
-  bool detail = false,
-}) {
-  final status = order.status.toLowerCase();
-  if (status == 'cancelled') return const SizedBox.shrink();
-  if (status == 'completed') {
-    if (order.pointsEarned <= 0) {
-      return const Text(
-        'No points for this order',
-        style: TextStyle(color: Color(0xFF8D6E63), fontSize: 12),
-      );
-    }
-    if (detail) {
-      return Text(
-        'You earned ${order.pointsEarned} ${order.pointsEarned == 1 ? 'point' : 'points'} from this order',
-        style: const TextStyle(
-          color: Color(0xFF9A6B32),
-          fontWeight: FontWeight.w600,
-          fontSize: 12,
-        ),
-      );
-    }
-    return _EarnedPointsChip(points: order.pointsEarned);
-  }
-  return Text(
-    _pendingPointsText(order, pointsRate),
-    style: const TextStyle(color: Color(0xFF8D6E63), fontSize: 12),
-  );
 }
 
 class _LastOrderPointsBanner extends StatelessWidget {

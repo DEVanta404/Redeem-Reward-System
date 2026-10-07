@@ -124,11 +124,18 @@ void main() {
     );
     await tester.tap(find.widgetWithText(FilledButton, 'Mark completed').last);
     await tester.pumpAndSettle();
-    expect(find.text('Complete this order?'), findsOneWidget);
-    await tester.tap(find.widgetWithText(FilledButton, 'Mark completed').last);
+    expect(find.text('Record counter payment'), findsOneWidget);
+    expect(find.text('Amount received'), findsOneWidget);
+    await tester.tap(
+      find.widgetWithText(FilledButton, 'Complete & record payment'),
+    );
     await tester.pumpAndSettle();
 
     expect(updateCount, 1);
+    expect(find.text('Payment receipt'), findsOneWidget);
+    expect(find.text('Paid'), findsOneWidget);
+    await tester.tap(find.text('Done'));
+    await tester.pumpAndSettle();
     expect(find.text('KPT-218A'), findsNothing);
     expect(find.text('No orders found.'), findsOneWidget);
   });

@@ -398,7 +398,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Last 7 days'), findsOneWidget);
       expect(find.text('Search deals'), findsNothing);
-      expect(find.text('No sales yet for this period'), findsNWidgets(2));
+      expect(find.text('No sales yet for this period'), findsNWidgets(3));
 
       await tester.tap(find.widgetWithText(ChoiceChip, 'All').first);
       await tester.pumpAndSettle();

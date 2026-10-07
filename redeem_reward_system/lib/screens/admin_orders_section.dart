@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../services/currency_formatter.dart';
 import '../services/order_history_service.dart';
+import '../services/orders_service.dart';
+import '../services/payment_method.dart';
+import 'order_receipt_screen.dart';
 
 class AdminOrdersSection extends StatefulWidget {
   final Future<void> Function()? onOrderUpdated;
@@ -124,45 +127,126 @@ class AdminOrdersSectionState extends State<AdminOrdersSection> {
   ) async {
     if (_processingOrderId != null || order.status != 'pending') return;
     final isComplete = newStatus == 'completed';
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(isComplete ? 'Complete this order?' : 'Cancel this order?'),
-        content: Text(
-          isComplete
-              ? 'This will complete ${order.orderCode} and award ${_pointsFor(order)} points.'
-              : 'This will cancel ${order.orderCode}. No points will be awarded.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Keep pending'),
+    final payment = isComplete
+        ? await showDialog<_AdminPaymentDraft>(
+            context: context,
+            builder: (_) => _AdminPaymentDialog(order: order),
+          )
+        : null;
+    if (isComplete && payment == null) return;
+    final completionPayment = payment;
+    if (!isComplete) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Cancel this order?'),
+          content: Text(
+            'This will cancel ${order.orderCode}. No payment or points will be recorded.',
           ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            style: FilledButton.styleFrom(
-              backgroundColor: isComplete
-                  ? const Color(0xFF2E7D32)
-                  : const Color(0xFF8D6E63),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Keep pending'),
             ),
-            child: Text(isComplete ? 'Mark completed' : 'Cancel order'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF8D6E63),
+              ),
+              child: const Text('Cancel order'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+    }
 
     setState(() => _processingOrderId = order.id);
     try {
-      await (widget.updateStatus ?? _orderService.updateOrderStatus)(
-        orderId: order.id,
-        newStatus: newStatus,
-      );
+      final Map<String, dynamic> result;
+      if (isComplete && widget.updateStatus == null) {
+        final checkoutPayment = completionPayment;
+        if (checkoutPayment == null) {
+          throw StateError(
+            'Payment confirmation is required to complete an order.',
+          );
+        }
+        result = await OrdersService().completeOrderWithPayment(
+          orderId: order.id,
+          paymentMethod: checkoutPayment.method,
+          amountReceived: checkoutPayment.method == PaymentMethod.cash
+              ? checkoutPayment.amount
+              : null,
+          reference: checkoutPayment.reference,
+        );
+      } else {
+        result = await (widget.updateStatus ?? _orderService.updateOrderStatus)(
+          orderId: order.id,
+          newStatus: newStatus,
+        );
+      }
       if (!mounted) return;
       Navigator.of(context).pop();
       await _loadOrders(reset: true);
       await widget.onOrderUpdated?.call();
       if (!mounted) return;
+      if (isComplete) {
+        final receiptPayment = completionPayment!;
+        final completedOrder = order.copyWith(
+          status: 'completed',
+          pointsEarned:
+              int.tryParse(result['points_earned']?.toString() ?? '') ??
+              _pointsFor(order),
+          paymentStatus: 'paid',
+          paymentMethod: receiptPayment.method.value,
+          amountTendered: receiptPayment.method == PaymentMethod.cash
+              ? receiptPayment.amount
+              : order.total,
+          changeAmount: receiptPayment.method == PaymentMethod.cash
+              ? receiptPayment.amount! - order.total
+              : 0,
+          paymentReference: receiptPayment.reference,
+          paidAt: DateTime.now(),
+        );
+        await showDialog<void>(
+          context: context,
+          builder: (dialogContext) => Dialog(
+            backgroundColor: const Color(0xFFF5F0E8),
+            insetPadding: const EdgeInsets.all(16),
+            child: SizedBox(
+              height: MediaQuery.sizeOf(dialogContext).height * 0.86,
+              child: Column(
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.only(top: 12),
+                    child: Text(
+                      'Payment receipt',
+                      style: TextStyle(
+                        color: Color(0xFF3E2723),
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: OrderReceiptView(
+                      order: completedOrder,
+                      listenForUpdates: false,
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
+                    child: FilledButton(
+                      onPressed: () => Navigator.pop(dialogContext),
+                      child: const Text('Done'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -449,6 +533,211 @@ class AdminOrdersSectionState extends State<AdminOrdersSection> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _AdminPaymentDraft {
+  final PaymentMethod method;
+  final double? amount;
+  final String? reference;
+
+  const _AdminPaymentDraft({
+    required this.method,
+    required this.amount,
+    required this.reference,
+  });
+}
+
+class _AdminPaymentDialog extends StatefulWidget {
+  final OrderHistoryEntry order;
+
+  const _AdminPaymentDialog({required this.order});
+
+  @override
+  State<_AdminPaymentDialog> createState() => _AdminPaymentDialogState();
+}
+
+class _AdminPaymentDialogState extends State<_AdminPaymentDialog> {
+  late PaymentMethod _method;
+  late final TextEditingController _amountController;
+  final _referenceController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _method = PaymentMethod.fromValue(widget.order.paymentMethod);
+    _amountController = TextEditingController(
+      text: (widget.order.amountTendered ?? widget.order.total).toStringAsFixed(
+        2,
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _amountController.dispose();
+    _referenceController.dispose();
+    super.dispose();
+  }
+
+  double? get _amount {
+    final raw = _amountController.text.trim();
+    if (!RegExp(r'^\d+(?:\.\d{1,2})?$').hasMatch(raw)) return null;
+    final value = double.tryParse(raw);
+    if (value == null || value > 1000000) return null;
+    return value;
+  }
+
+  bool get _valid =>
+      _method != PaymentMethod.cash ||
+      (_amount != null && _amount! >= widget.order.total);
+
+  @override
+  Widget build(BuildContext context) {
+    final amount = _amount;
+    final isCash = _method == PaymentMethod.cash;
+    final quickAmounts = <double>{
+      widget.order.total,
+      100,
+      200,
+      500,
+      1000,
+      (widget.order.total / 100).ceil() * 100.0,
+    }..removeWhere((value) => value < widget.order.total || value > 1000000);
+
+    return AlertDialog(
+      title: const Text('Record counter payment'),
+      content: SizedBox(
+        width: 440,
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '${widget.order.orderCode} · Total ${formatPeso(widget.order.total)}',
+                style: const TextStyle(
+                  color: Color(0xFF3E2723),
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                "Customer planned: ${widget.order.amountTendered == null ? 'not provided' : formatPeso(widget.order.amountTendered!)}",
+                style: const TextStyle(color: Color(0xFF8D6E63)),
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                'Payment mode',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: PaymentMethod.values
+                    .map(
+                      (method) => ChoiceChip(
+                        label: Text(method.label),
+                        selected: _method == method,
+                        onSelected: (_) => setState(() => _method = method),
+                        selectedColor: const Color(0xFF3E2723),
+                        labelStyle: TextStyle(
+                          color: _method == method
+                              ? Colors.white
+                              : const Color(0xFF5D4037),
+                        ),
+                      ),
+                    )
+                    .toList(),
+              ),
+              if (isCash) ...[
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _amountController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  onChanged: (_) => setState(() {}),
+                  decoration: const InputDecoration(
+                    labelText: 'Amount received',
+                    prefixText: '₱ ',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: quickAmounts
+                      .map(
+                        (value) => ActionChip(
+                          label: Text(
+                            value == widget.order.total
+                                ? 'Exact'
+                                : formatPeso(value),
+                          ),
+                          onPressed: () {
+                            _amountController.text = value.toStringAsFixed(2);
+                            setState(() {});
+                          },
+                        ),
+                      )
+                      .toList(),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  amount == null || amount < widget.order.total
+                      ? 'Amount received must cover the total.'
+                      : 'Change: ${formatPeso(amount - widget.order.total)}',
+                  style: TextStyle(
+                    color: amount == null || amount < widget.order.total
+                        ? const Color(0xFFB3261E)
+                        : const Color(0xFF3E2723),
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+              if (_method == PaymentMethod.gcash ||
+                  _method == PaymentMethod.maya) ...[
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _referenceController,
+                  decoration: const InputDecoration(
+                    labelText: 'Reference number (optional)',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Back'),
+        ),
+        FilledButton(
+          onPressed: _valid
+              ? () => Navigator.pop(
+                  context,
+                  _AdminPaymentDraft(
+                    method: _method,
+                    amount: _amount,
+                    reference: _referenceController.text.trim().isEmpty
+                        ? null
+                        : _referenceController.text.trim(),
+                  ),
+                )
+              : null,
+          style: FilledButton.styleFrom(
+            backgroundColor: const Color(0xFF2E7D32),
+          ),
+          child: const Text('Complete & record payment'),
+        ),
+      ],
     );
   }
 }

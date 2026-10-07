@@ -87,15 +87,36 @@ class RewardClaimsRow {
       );
 }
 
+class PaymentMethodSalesRow {
+  final String paymentMethod;
+  final int paidOrders;
+  final double revenue;
+
+  const PaymentMethodSalesRow({
+    required this.paymentMethod,
+    required this.paidOrders,
+    required this.revenue,
+  });
+
+  factory PaymentMethodSalesRow.fromJson(Map<String, dynamic> json) =>
+      PaymentMethodSalesRow(
+        paymentMethod: json['payment_method']?.toString() ?? 'cash',
+        paidOrders: _asInt(json['paid_orders']),
+        revenue: _asDouble(json['revenue']),
+      );
+}
+
 class SalesReport {
   final SalesSummary summary;
   final List<DealSalesRow> deals;
   final List<RewardClaimsRow> rewards;
+  final List<PaymentMethodSalesRow> paymentMethods;
 
   const SalesReport({
     required this.summary,
     required this.deals,
     required this.rewards,
+    this.paymentMethods = const [],
   });
 }
 
@@ -111,12 +132,16 @@ class SalesService {
       _client.rpc('get_sales_summary', params: parameters),
       _client.rpc('get_deal_sales', params: parameters),
       _client.rpc('get_reward_claims', params: parameters),
+      _client.rpc('get_payment_method_sales', params: parameters),
     ]);
 
     return SalesReport(
       summary: SalesSummary.fromJson(_firstRow(results[0])),
       deals: _rows(results[1]).map(DealSalesRow.fromJson).toList(),
       rewards: _rows(results[2]).map(RewardClaimsRow.fromJson).toList(),
+      paymentMethods: _rows(
+        results[3],
+      ).map(PaymentMethodSalesRow.fromJson).toList(),
     );
   }
 }

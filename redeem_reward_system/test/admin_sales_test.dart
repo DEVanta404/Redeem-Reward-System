@@ -26,6 +26,18 @@ void main() {
       rewards: [
         RewardClaimsRow(name: 'Free Espresso', claims: 2, pointsRedeemed: 200),
       ],
+      paymentMethods: [
+        PaymentMethodSalesRow(
+          paymentMethod: 'cash',
+          paidOrders: 3,
+          revenue: 780,
+        ),
+        PaymentMethodSalesRow(
+          paymentMethod: 'gcash',
+          paidOrders: 1,
+          revenue: 300,
+        ),
+      ],
     );
 
     await tester.pumpWidget(
@@ -50,6 +62,8 @@ void main() {
     expect(find.text('₱1080.00'), findsOneWidget);
     expect(find.text('Oat Latte'), findsOneWidget);
     expect(find.text('Free Espresso'), findsOneWidget);
+    expect(find.text('Revenue by payment method'), findsOneWidget);
+    expect(find.text('3 paid orders'), findsOneWidget);
 
     await tester.tap(find.widgetWithText(ChoiceChip, 'Today'));
     await tester.pumpAndSettle();
@@ -72,7 +86,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('No sales yet for this period'), findsNWidgets(2));
+    expect(find.text('No sales yet for this period'), findsNWidgets(3));
     expect(find.text('All time'), findsOneWidget);
   });
 }
